@@ -298,7 +298,8 @@ const OWNER_PW = "Owner#2026pass", WORKER_NEW_PW = "Worker#2026new";
   await A.reload(); await A.waitForSelector("body:not(.auth-locked)");
   await a.nav("orders");
   check("duplicate number is flagged in the orders list", /رقم مكرر/.test(await A.textContent("#ordersBody")));
-  await A.click("#ordersBody tr:nth-child(1) [data-view]");
+  // the row flagged as duplicate (a live refresh may reorder the list)
+  await A.click('#ordersBody tr:has-text("رقم مكرر") [data-view]');
   await A.click("#renumberOrderBtn"); await A.waitForTimeout(1500);
   const numsAfter = (await a.ls("l997_orders")).map((o) => o.number);
   check("'new number' button removes the duplicate", new Set(numsAfter).size === numsAfter.length, numsAfter.join(","));
