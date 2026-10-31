@@ -463,6 +463,9 @@ body.auth-locked .top-logout{display:none!important}
 @media (max-width:640px){.cp-pay-row{grid-template-columns:1fr auto;}}
 .svc-toggle{display:flex;align-items:center;gap:4px;justify-content:center;font-size:11px;font-weight:500;margin-top:4px;white-space:nowrap}
 .check-line{display:flex;align-items:center;gap:8px;font-size:14px}
+.code-wrap{display:flex;gap:6px;align-items:center}
+.code-wrap input{width:110px;text-transform:uppercase}
+#discountCodeInfo{color:var(--success,#1f7a55);font-size:13px}
 
 </style>
 </head>
@@ -661,6 +664,8 @@ body.auth-locked .top-logout{display:none!important}
 
             <div class="summary-row"><span>المجموع الأساسي</span><strong id="summarySubtotal">0.000 د.ب</strong></div>
             <div class="summary-row"><span>رسوم الاستعجال</span><strong id="summaryUrgent">0.000 د.ب</strong></div>
+            <div class="summary-row"><span>كود خصم</span><span class="code-wrap"><input id="discountCode" type="text" maxlength="20" autocomplete="off" autocapitalize="characters" dir="ltr" placeholder="الكود" /><button type="button" class="mini-btn" id="applyCodeBtn">تطبيق</button></span></div>
+            <div class="summary-row" id="discountCodeInfo" style="display:none"></div>
             <div class="summary-row"><span>الخصم</span><input id="discountAmount" type="number" min="0" step="0.001" value="0" /></div>
             <div class="summary-row" id="discountReasonRow" style="display:none"><span>سبب الخصم (إلزامي)</span><input id="discountReason" type="text" maxlength="120" placeholder="مثال: عميل دائم، شكوى سابقة" /></div>
             <div class="summary-row" id="summaryVatRow" style="display:none"><span id="summaryVatLabel">ضريبة القيمة المضافة</span><strong id="summaryVat">0.000 د.ب</strong></div>
@@ -951,6 +956,11 @@ body.auth-locked .top-logout{display:none!important}
           <div class="panel" data-settings-panel="packages" style="display:none">
             <div class="panel-header"><div><h3>الباقات</h3><p>تعريف باقات مسبقة الدفع (عدد قطع بسعر ثابت) — أدخل أسعارك الخاصة</p></div><button class="primary-btn" id="addPackageDefBtn">＋ باقة جديدة</button></div>
             <div class="table-wrap"><table><thead><tr><th>اسم الباقة</th><th>نوع الخدمة</th><th>عدد القطع</th><th>السعر</th><th>هدية مجانية</th><th></th></tr></thead><tbody id="packageDefsBody"></tbody></table></div>
+          </div>
+
+          <div class="panel" data-settings-panel="packages" style="display:none">
+            <div class="panel-header"><div><h3>🏷 أكواد الخصم</h3><p>كود من حروف إنجليزية وأرقام أو أرقام فقط، بنسبة خصم تحددها — يكتبه الموظف عند إنشاء الطلب فيُخصم تلقائياً</p></div><button class="primary-btn" id="addDiscountCodeBtn">＋ كود جديد</button></div>
+            <div class="table-wrap"><table><thead><tr><th>الكود</th><th>نسبة الخصم</th><th>مرات الاستخدام</th><th>مفعّل</th><th></th></tr></thead><tbody id="discountCodesBody"></tbody></table></div>
           </div>
 
           <div class="panel" data-settings-panel="admin" style="display:none">
@@ -4573,7 +4583,7 @@ body.auth-locked .top-logout{display:none!important}
   const PERM_DEFS = [
     { id: "create_order", label: "إنشاء طلب جديد", worker: true, accountant: false, manager: true },
     { id: "cancel_order", label: "إلغاء الطلب بدون موافقة مشرف / إرجاعه من التسليم", worker: false, accountant: false, manager: true },
-    { id: "give_discount", label: "منح خصم على الطلب بدون موافقة مشرف", worker: false, accountant: false, manager: true },
+    { id: "give_discount", label: "منح خصم يدوي على الطلب بدون موافقة مشرف (ضمن الحد الأقصى)", worker: true, accountant: true, manager: true, rev: 2 },
     { id: "edit_customer", label: "تعديل بيانات العملاء (الاسم والجوال)", worker: false, accountant: true, manager: true },
     { id: "balance_tx", label: "استلام دفعة وإيداع رصيد للعميل", worker: true, accountant: true, manager: true },
     { id: "balance_adjust", label: "ردّ نقدي / خصم / تسوية رصيد / عكس حركة", worker: false, accountant: true, manager: true },
@@ -4599,6 +4609,8 @@ body.auth-locked .top-logout{display:none!important}
     // دمج: نحافظ على اختيارات المالك السابقة، ونضيف الصلاحيات الجديدة بقيمها الافتراضية، والمالك دائماً مسموح
     return DEFAULT_PERM_MATRIX.map((d) => {
       const s = byId[d.id];
+      // صلاحية عُدّلت قيمتها الافتراضية (rev): تُطبَّق مرة واحدة، ثم يبقى اختيار المالك كما هو
+      if (s && d.rev && s.rev !== d.rev) return { ...d, owner: true };
       return s ? { ...d, worker: !!s.worker, accountant: !!s.accountant, manager: !!s.manager, owner: true } : { ...d };
     });
   }
@@ -5933,6 +5945,7 @@ body.auth-locked .top-logout{display:none!important}
     document.getElementById("paidAmount").value = 0;
     document.getElementById("balanceUse").value = 0;
     document.getElementById("discountAmount").value = 0;
+    draftCode = null; const dci = document.getElementById("discountCode"); if (dci) dci.value = "";
     const drs = document.getElementById("discountReason"); if (drs) drs.value = "";
     const barText = document.getElementById("posCustomerBarText");
     barText.innerHTML = "اختر عميلاً للبدء بالطلب<small>اضغط هنا للبحث أو إضافة عميل جديد</small>";
@@ -6253,6 +6266,11 @@ body.auth-locked .top-logout{display:none!important}
   }
 
   // سقف الخصم: المالك بلا سقف، وغيره بنسبة محددة من سياسات الأمان
+  // أكواد الخصم (الإعدادات ← الباقات): حروف إنجليزية وأرقام، بنسبة يحددها المالك/المدير — لا تحتاج موافقة مشرف
+  const normDiscCode = (v) => toLatinDigits(String(v || "")).toUpperCase().replace(/\s+/g, "");
+  const CODE_RE = /^[A-Z0-9]{3,20}$/;
+  let draftCode = null; // { code, percent }
+  function findCode(v) { const c = normDiscCode(v); return (settings.discountCodes || []).find((x) => x.code === c) || null; }
   function discountCapAmount(base) { return role === "owner" ? base : round3((base * sec.maxDiscountPct) / 100); }
   // المجموع الأساسي = القطع + الإضافات؛ رسوم الاستعجال تُحسب على القطع فقط
   function draftBase() {
@@ -6265,8 +6283,11 @@ body.auth-locked .top-logout{display:none!important}
   }
   function currentTotals() {
     const { subtotal, urgentFee, extrasTotal } = draftBase();
+    const codeBase = round3(subtotal + urgentFee);
+    if (draftCode) document.getElementById("discountAmount").value = round3((codeBase * draftCode.percent) / 100).toFixed(3);
     const rawDiscount = Number(document.getElementById("discountAmount").value) || 0;
-    const discountCap = discountCapAmount(round3(subtotal + urgentFee));
+    // خصم الكود حدّده المالك مسبقاً: لا يخضع لسقف الموظف (لكن لا يتجاوز قيمة الطلب)
+    const discountCap = draftCode ? codeBase : discountCapAmount(codeBase);
     // الخصم لا يمكن أن يكون سالباً (يتحول لزيادة سعر مخفية) ولا يتجاوز قيمة الطلب
     const discount = round3(Math.min(Math.max(0, rawDiscount), discountCap));
     const preVatTotal = Math.max(0, round3(subtotal + urgentFee - discount));
@@ -6299,7 +6320,11 @@ body.auth-locked .top-logout{display:none!important}
     document.getElementById("summaryBalance").textContent = money(cust ? cust.balance : 0);
     document.getElementById("summaryOutstanding").textContent = money(t2.outstanding);
     const dr = document.getElementById("discountReasonRow");
-    if (dr) dr.style.display = t2.discount > 0 ? "" : "none";
+    if (dr) dr.style.display = t2.discount > 0 && !draftCode ? "" : "none";
+    const ci = document.getElementById("discountCodeInfo");
+    if (ci) { ci.style.display = draftCode ? "" : "none"; if (draftCode) ci.innerHTML = `<span>✓ كود <b dir="ltr">${esc(draftCode.code)}</b> — خصم ${draftCode.percent}%</span><button type="button" class="link-btn" id="removeCodeBtn">إزالة</button>`; }
+    const rc = document.getElementById("removeCodeBtn"); if (rc) rc.onclick = () => clearDraftCode(true);
+    const da = document.getElementById("discountAmount"); if (da) da.readOnly = !!draftCode;
     const chk = document.getElementById("posChecklist");
     if (chk) {
       const hasC = !!cust, hasI = draftItems.length > 0;
@@ -6310,6 +6335,27 @@ body.auth-locked .top-logout{display:none!important}
     document.getElementById("orderPriority").value = e.target.checked ? "urgent" : "normal";
     updateSummary();
   });
+  function clearDraftCode(notify) {
+    draftCode = null;
+    const inp = document.getElementById("discountCode"); if (inp) inp.value = "";
+    document.getElementById("discountAmount").value = 0;
+    if (notify) toast("أُزيل كود الخصم");
+    updateSummary();
+  }
+  function applyDiscountCode() {
+    const inp = document.getElementById("discountCode");
+    const raw = normDiscCode(inp.value);
+    if (!raw) { toast("اكتب كود الخصم"); inp.focus(); return; }
+    const c = findCode(raw);
+    if (!c) { toast(`الكود «${raw}» غير موجود`); logActivity(`محاولة كود خصم غير صحيح «${raw}»`); return; }
+    if (c.active === false) { toast(`الكود «${raw}» غير مفعّل`); return; }
+    draftCode = { code: c.code, percent: Number(c.percent) || 0 };
+    inp.value = c.code;
+    updateSummary();
+    toast(`✓ تم تطبيق خصم ${draftCode.percent}%`);
+  }
+  document.getElementById("applyCodeBtn")?.addEventListener("click", applyDiscountCode);
+  document.getElementById("discountCode")?.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); applyDiscountCode(); } });
   ["discountAmount", "paidAmount", "balanceUse"].forEach((id) => {
     document.getElementById(id).addEventListener("input", updateSummary);
     document.getElementById(id).addEventListener("change", updateSummary);
@@ -6452,7 +6498,9 @@ body.auth-locked .top-logout{display:none!important}
       payment: { method: "unpaid", ...tt, paid: 0, balanceUse: 0, outstanding: tt.total },
       paymentConfirmed: false,
       createdBy: me ? me.name : "", createdById: me ? me.id : "",
-      discountReason: tt.discount > 0 ? (opts.discountReason || "") : "",
+      discountReason: tt.discount > 0 ? (draftCode ? `كود خصم ${draftCode.code} (${draftCode.percent}%)` : opts.discountReason || "") : "",
+      discountCode: tt.discount > 0 && draftCode ? draftCode.code : undefined,
+      discountPercent: tt.discount > 0 && draftCode ? draftCode.percent : undefined,
       discountApprovedBy: tt.discount > 0 && opts.approver ? opts.approver.name : "",
       createdAt: now, readyAt: null, deliveredAt: null,
     };
@@ -6502,7 +6550,11 @@ body.auth-locked .top-logout{display:none!important}
       openPage("orders");
       showOrderSavedPrompt(order, cust);
     };
-    if (tt.discount > 0) {
+    if (tt.discount > 0 && draftCode) {
+      const c = findCode(draftCode.code);
+      if (!c || c.active === false) { toast("كود الخصم لم يعد صالحاً — أزله أو اكتب كوداً آخر"); return; }
+      proceed(null, false);
+    } else if (tt.discount > 0) {
       if (!reason) { toast("اكتب سبب الخصم (إلزامي)"); document.getElementById("discountReason").focus(); return; }
       requireOverride("give_discount", `خصم ${money(tt.discount)} على الطلب`, proceed);
     } else proceed(null, false);
@@ -7312,7 +7364,7 @@ body.auth-locked .top-logout{display:none!important}
     const extrasTotal = extrasTotalOf(order.extras);
     const subtotal = round3(itemsTotal + extrasTotal);
     const urgentFee = order.priority === "urgent" ? urgentFeeOf(order.items) : 0;
-    const discount = round3(Math.min(Number(p.discount) || 0, subtotal + urgentFee));
+    const discount = order.discountCode && order.discountPercent ? round3(((subtotal + urgentFee) * order.discountPercent) / 100) : round3(Math.min(Number(p.discount) || 0, subtotal + urgentFee));
     const preVat = Math.max(0, round3(subtotal + urgentFee - discount));
     const vatPercent = p.vatPercent !== undefined ? Number(p.vatPercent) || 0 : Number(loadProfile().vatPercent) || 0;
     const vat = vatPercent > 0 ? round3((preVat * vatPercent) / 100) : 0;
@@ -7398,7 +7450,7 @@ body.auth-locked .top-logout{display:none!important}
     const readyH = (order.statusHistory || []).find((h) => h.status === "ready");
     const readyBy = order.readyBy || (readyH && readyH.by) || "";
     if (readyBy) rows.push(["جهّز الطلب (جاهز للتسليم)", esc(readyBy) + when(order.readyAt || (readyH && readyH.at))]);
-    if (order.discountReason || order.discountApprovedBy) rows.push(["خصم", `${money(order.payment.discount || 0)} — ${esc(order.discountReason || "")}${order.discountApprovedBy ? " (اعتمده " + esc(order.discountApprovedBy) + ")" : ""}`]);
+    if (order.discountReason || order.discountApprovedBy) rows.push([order.discountCode ? "خصم بكود" : "خصم", `${money(order.payment.discount || 0)} — ${esc(order.discountReason || "")}${order.discountApprovedBy ? " (اعتمده " + esc(order.discountApprovedBy) + ")" : ""}`]);
     if (order.paymentBy) rows.push(["أكّد الدفع", esc(order.paymentBy) + (order.creditApprovedBy ? " — دين اعتمده " + esc(order.creditApprovedBy) : "") + when(order.paidAt)]);
     if (order.deliveredBy) rows.push(["سلّم الطلب للعميل", esc(order.deliveredBy) + (order.receiver ? " — المستلم: " + esc(order.receiver) : "") + when(order.deliveredAt)]);
     if (order.cancelledBy) rows.push(["ألغى الطلب", esc(order.cancelledBy) + (order.cancelApprovedBy ? " — اعتمده " + esc(order.cancelApprovedBy) : "")]);
@@ -8418,7 +8470,63 @@ body.auth-locked .top-logout{display:none!important}
     }).join("");
     if (!can("edit_pricing")) document.querySelectorAll("#extrasPricesBody input, #extrasPricesBody select").forEach((el) => (el.disabled = true));
     renderPackageDefs();
+    renderDiscountCodes();
   }
+  function renderDiscountCodes() {
+    const body = document.getElementById("discountCodesBody"); if (!body) return;
+    const list = settings.discountCodes || [];
+    const uses = (code) => orders.filter((o) => o.discountCode === code && o.status !== "cancelled").length;
+    const edit = can("edit_pricing");
+    body.innerHTML = list.length ? list.map((c) => `<tr style="${c.active === false ? "opacity:.5" : ""}"><td><b dir="ltr">${esc(c.code)}</b></td><td>${c.percent}%</td><td>${uses(c.code)}</td>
+      <td style="text-align:center"><input type="checkbox" data-code-active="${esc(c.code)}" ${c.active === false ? "" : "checked"} ${edit ? "" : "disabled"} /></td>
+      <td>${edit ? `<button class="mini-btn" data-code-edit="${esc(c.code)}">تعديل النسبة</button> <button class="mini-btn danger-mini" data-code-del="${esc(c.code)}">حذف</button>` : ""}</td></tr>`).join("")
+      : `<tr><td colspan="5" class="empty-state compact">لا توجد أكواد بعد</td></tr>`;
+    const saveCodes = (msg) => { save(KEYS.settings, settings); renderDiscountCodes(); if (msg) logActivity(msg); };
+    body.querySelectorAll("[data-code-active]").forEach((cb) => cb.addEventListener("change", () => {
+      const c = findCode(cb.dataset.codeActive); if (!c) return; c.active = cb.checked;
+      saveCodes(`${cb.checked ? "تفعيل" : "إيقاف"} كود الخصم ${c.code}`);
+    }));
+    body.querySelectorAll("[data-code-del]").forEach((b) => b.addEventListener("click", () => {
+      const code = b.dataset.codeDel;
+      confirmAction(`حذف كود الخصم «${code}»؟ الطلبات السابقة تحتفظ بخصمها.`, () => {
+        settings.discountCodes = (settings.discountCodes || []).filter((x) => x.code !== code);
+        saveCodes(`حذف كود الخصم ${code}`);
+      });
+    }));
+    body.querySelectorAll("[data-code-edit]").forEach((b) => b.addEventListener("click", () => openDiscountCodeForm(findCode(b.dataset.codeEdit))));
+  }
+  function openDiscountCodeForm(existing) {
+    if (!can("edit_pricing")) { denied(); return; }
+    openQuickForm({
+      title: existing ? `تعديل الكود ${existing.code}` : "🏷 كود خصم جديد",
+      sub: "حروف إنجليزية وأرقام أو أرقام فقط (3 إلى 20 خانة، بدون مسافات). الموظف يكتبه عند إنشاء الطلب فيُخصم تلقائياً.",
+      fields: [
+        { id: "code", label: "الكود", type: "text", value: existing ? existing.code : "" },
+        { id: "percent", label: "نسبة الخصم %", type: "number", step: "1", min: 1, value: existing ? existing.percent : 10 },
+      ],
+      submitLabel: "حفظ",
+      onSubmit: (v) => {
+        const code = normDiscCode(v.code), pct = Number(normDigits(String(v.percent)));
+        if (!CODE_RE.test(code)) { toast("الكود: حروف إنجليزية وأرقام فقط، من 3 إلى 20 خانة"); return false; }
+        if (!(pct > 0 && pct <= 100)) { toast("النسبة بين 1% و 100%"); return false; }
+        settings.discountCodes = settings.discountCodes || [];
+        const dup = settings.discountCodes.find((x) => x.code === code);
+        if (existing) {
+          if (code !== existing.code && dup) { toast("هذا الكود موجود"); return false; }
+          const before = `${existing.code} ${existing.percent}%`;
+          existing.code = code; existing.percent = round3(pct);
+          logActivity(`تعديل كود الخصم ${before} → ${code} ${existing.percent}%`);
+        } else {
+          if (dup) { toast("هذا الكود موجود"); return false; }
+          settings.discountCodes.push({ code, percent: round3(pct), active: true, createdAt: new Date().toISOString(), createdBy: me ? me.name : "" });
+          logActivity(`إضافة كود خصم ${code} بنسبة ${round3(pct)}%`);
+        }
+        save(KEYS.settings, settings); renderDiscountCodes();
+        toast("تم حفظ الكود");
+      },
+    });
+  }
+  document.getElementById("addDiscountCodeBtn")?.addEventListener("click", () => openDiscountCodeForm(null));
 
   document.getElementById("addCustomGarmentBtn").addEventListener("click", () => {
     openQuickForm({

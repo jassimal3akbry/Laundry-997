@@ -214,6 +214,8 @@
 
             <div class="summary-row"><span>المجموع الأساسي</span><strong id="summarySubtotal">0.000 د.ب</strong></div>
             <div class="summary-row"><span>رسوم الاستعجال</span><strong id="summaryUrgent">0.000 د.ب</strong></div>
+            <div class="summary-row"><span>كود خصم</span><span class="code-wrap"><input id="discountCode" type="text" maxlength="20" autocomplete="off" autocapitalize="characters" dir="ltr" placeholder="الكود" /><button type="button" class="mini-btn" id="applyCodeBtn">تطبيق</button></span></div>
+            <div class="summary-row" id="discountCodeInfo" style="display:none"></div>
             <div class="summary-row"><span>الخصم</span><input id="discountAmount" type="number" min="0" step="0.001" value="0" /></div>
             <div class="summary-row" id="discountReasonRow" style="display:none"><span>سبب الخصم (إلزامي)</span><input id="discountReason" type="text" maxlength="120" placeholder="مثال: عميل دائم، شكوى سابقة" /></div>
             <div class="summary-row" id="summaryVatRow" style="display:none"><span id="summaryVatLabel">ضريبة القيمة المضافة</span><strong id="summaryVat">0.000 د.ب</strong></div>
@@ -504,6 +506,11 @@
           <div class="panel" data-settings-panel="packages" style="display:none">
             <div class="panel-header"><div><h3>الباقات</h3><p>تعريف باقات مسبقة الدفع (عدد قطع بسعر ثابت) — أدخل أسعارك الخاصة</p></div><button class="primary-btn" id="addPackageDefBtn">＋ باقة جديدة</button></div>
             <div class="table-wrap"><table><thead><tr><th>اسم الباقة</th><th>نوع الخدمة</th><th>عدد القطع</th><th>السعر</th><th>هدية مجانية</th><th></th></tr></thead><tbody id="packageDefsBody"></tbody></table></div>
+          </div>
+
+          <div class="panel" data-settings-panel="packages" style="display:none">
+            <div class="panel-header"><div><h3>🏷 أكواد الخصم</h3><p>كود من حروف إنجليزية وأرقام أو أرقام فقط، بنسبة خصم تحددها — يكتبه الموظف عند إنشاء الطلب فيُخصم تلقائياً</p></div><button class="primary-btn" id="addDiscountCodeBtn">＋ كود جديد</button></div>
+            <div class="table-wrap"><table><thead><tr><th>الكود</th><th>نسبة الخصم</th><th>مرات الاستخدام</th><th>مفعّل</th><th></th></tr></thead><tbody id="discountCodesBody"></tbody></table></div>
           </div>
 
           <div class="panel" data-settings-panel="admin" style="display:none">

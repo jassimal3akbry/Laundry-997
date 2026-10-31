@@ -443,3 +443,6 @@ body.auth-locked .top-logout{display:none!important}
 @media (max-width:640px){.cp-pay-row{grid-template-columns:1fr auto;}}
 .svc-toggle{display:flex;align-items:center;gap:4px;justify-content:center;font-size:11px;font-weight:500;margin-top:4px;white-space:nowrap}
 .check-line{display:flex;align-items:center;gap:8px;font-size:14px}
+.code-wrap{display:flex;gap:6px;align-items:center}
+.code-wrap input{width:110px;text-transform:uppercase}
+#discountCodeInfo{color:var(--success,#1f7a55);font-size:13px}
