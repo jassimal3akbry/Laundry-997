@@ -740,6 +740,10 @@
     return t(map[method] || "opt_cash");
   }
 
+  // شعار المحل (يُدمج في الملف عند البناء) — للواجهة والإيصالات (صورة / PDF)
+  const LOGO_997 = "__LOGO_997__";
+  const LOGO_IMG = (() => { const i = new window.Image(); i.src = LOGO_997; return i; })();
+  document.querySelectorAll("img[data-logo]").forEach((i) => { i.src = LOGO_997; });
   /* ------------------------------- الحالة -------------------------------- */
   let settings = load(KEYS.settings, null);
   let customers = load(KEYS.customers, []);
@@ -2174,7 +2178,7 @@
     return m ? `<div class="auth-note ${m[0]}" id="au_notice">${esc(AX(m[1]))}</div>` : "";
   }
   function authHead() {
-    return `<div class="auth-top"><div class="auth-brand"><div class="brand-mark">997</div><div><h1>997 Laundry</h1><p>${esc(AX("brand_sub"))}</p></div></div>
+    return `<div class="auth-top"><div class="auth-brand"><img class="brand-logo" src="${LOGO_997}" alt="997 Laundry"><div><h1><bdi>997 Laundry</bdi></h1><p>${esc(AX("brand_sub"))}</p></div></div>
       <select class="auth-lang" id="au_lang"><option value="ar">العربية</option><option value="en">English</option><option value="ur">اردو</option></select></div>`;
   }
   const pwField = (id, label, auto) => `<label><span>${esc(label)}</span><div class="auth-pw"><input type="password" id="${id}" dir="ltr" autocomplete="${auto}"><button type="button" class="auth-eye" data-eye="${id}">${esc(AX("show"))}</button></div></label>`;
@@ -3866,7 +3870,7 @@
     const p = order.payment, profile = loadProfile();
     const S = 2, W = 380 * S, pad = 22 * S;
     const FONT = (w, px) => `${w} ${px * S}px Tajawal, "Geeza Pro", "Segoe UI", Tahoma, Arial, sans-serif`;
-    const C = { brand: "#1f7ea8", ink: "#132630", muted: "#5d707a", line: "#dbe6eb", good: "#1f7a55", goodBg: "#e2f3eb", warn: "#a86411", warnBg: "#fbf0e0", bad: "#b4372f", badBg: "#f9e6e4", soft: "#f4f8fa" };
+    const C = { brand: "#5587C6", ink: "#132630", muted: "#5d707a", line: "#dbe6eb", good: "#1f7a55", goodBg: "#e2f3eb", warn: "#a86411", warnBg: "#fbf0e0", bad: "#b4372f", badBg: "#f9e6e4", soft: "#f4f8fa" };
     // المحتوى أولاً لحساب الطول
     const rows = order.items.map((it) => ({ a: `${clothingName(it.clothingId)} — ${serviceName(it.serviceId)}`, q: it.qty, v: it.fromPackageId ? L("من الباقة", "Package") : money(it.total) }));
     (order.extras || []).forEach((l) => rows.push({ a: `+ ${extraName(l.id)}`, q: l.per === "piece" ? l.qty : "", v: money(l.total) }));
@@ -3897,10 +3901,11 @@
     // الترويسة
     g.fillStyle = C.brand; g.fillRect(0, 0, W, 130 * S);
     const bx = en ? pad : W - pad - 58 * S;
-    rrect(bx, 34 * S, 58 * S, 58 * S, 14 * S, "#ffffff");
-    txt("997", bx + 29 * S, 72 * S, FONT(800, 20), C.brand, "center");
+    rrect(bx, 30 * S, 58 * S, 68 * S, 14 * S, "#ffffff");
+    if (LOGO_IMG.complete && LOGO_IMG.naturalWidth) { const lh = 58 * S, lw = lh * LOGO_IMG.naturalWidth / LOGO_IMG.naturalHeight; g.drawImage(LOGO_IMG, bx + (58 * S - lw) / 2, 35 * S, lw, lh); }
+    else txt("997", bx + 29 * S, 72 * S, FONT(800, 20), "#0C1E42", "center");
     const nx = en ? pad + 72 * S : W - pad - 72 * S;
-    txt(fit((en ? profile.nameEn : profile.nameAr) || "997 Laundry", FONT(800, 22), W - 150 * S), nx, 62 * S, FONT(800, 22), "#ffffff", startAlign);
+    txt(iso(fit((en ? profile.nameEn : profile.nameAr) || "997 Laundry", FONT(800, 22), W - 150 * S)), nx, 62 * S, FONT(800, 22), "#ffffff", startAlign);
     txt(fit([profile.phone ? iso(profile.phone) : "", profile.address].filter(Boolean).join(" · ") || iso("997 Laundry"), FONT(500, 13), W - 150 * S), nx, 88 * S, FONT(500, 13), "#e3f1f7", startAlign);
     let y = 166 * S;
     txt(`${L("إيصال طلب", "Receipt — Order")} #${order.number}`, start, y, FONT(800, 18), C.ink, startAlign);
@@ -4014,7 +4019,8 @@
     el.innerHTML = `
       <div class="receipt" dir="${lang === "en" ? "ltr" : "rtl"}">
         <div class="receipt-header">
-          <h2>${esc(shopName)}</h2>
+          <img class="receipt-logo" src="${LOGO_997}" alt="">
+          <h2><bdi>${esc(shopName)}</bdi></h2>
           ${profile.phone ? `<p class="receipt-sub">${esc(profile.phone)}</p>` : ""}
           ${profile.address ? `<p class="receipt-sub">${esc(profile.address)}</p>` : ""}
         </div>
