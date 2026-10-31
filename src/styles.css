@@ -446,3 +446,6 @@ body.auth-locked .top-logout{display:none!important}
 .code-wrap{display:flex;gap:6px;align-items:center}
 .code-wrap input{width:110px;text-transform:uppercase}
 #discountCodeInfo{color:var(--success,#1f7a55);font-size:13px}
+.cust-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.cust-tools .inv-search{flex:1 1 220px;margin:0}
+.cust-debt-summary{background:var(--danger-soft,#fdecec);border-radius:10px;padding:8px 12px;margin-bottom:8px;font-size:14px}

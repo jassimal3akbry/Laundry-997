@@ -1112,7 +1112,7 @@
   function renderCurrentPage() { openPage(currentPage, true); }
 
   function openPage(pageId, skipNav) {
-    if (me && PAGE_NEED[pageId] && !can(PAGE_NEED[pageId])) { denied(); pageId = "dashboard"; }
+    if (me && PAGE_NEED[pageId] && !can(PAGE_NEED[pageId])) { if (pageId !== "dashboard") denied(); pageId = homePage(); }
     currentPage = pageId;
     document.querySelectorAll(".page").forEach((p) => p.classList.remove("active"));
     document.getElementById("page-" + pageId)?.classList.add("active");
@@ -1574,6 +1574,8 @@
     { id: "balance_adjust", label: "ردّ نقدي / خصم / تسوية رصيد / عكس حركة", worker: false, accountant: true, manager: true },
     { id: "edit_pricing", label: "تعديل الأسعار والخدمات", worker: false, accountant: false, manager: true },
     { id: "view_reports", label: "عرض التقارير والمالية", worker: false, accountant: true, manager: true },
+    { id: "view_dashboard", label: "الصفحة الرئيسية (لوحة الأرقام)", worker: false, accountant: true, manager: true },
+    { id: "view_balances", label: "صفحة الأرصدة وكشوف الحساب", worker: false, accountant: true, manager: true },
     { id: "view_closures", label: "عرض الإغلاقات", worker: false, accountant: true, manager: true },
     { id: "approve_closing", label: "اعتماد الإغلاق اليومي/الشهري", worker: false, accountant: false, manager: true },
     { id: "add_expense", label: "المخزون والمشتريات (عرض وإضافة)", worker: false, accountant: true, manager: true },
@@ -2070,7 +2072,9 @@
     if (o === true || o === false) return o;
     return permAllows(permId, r);
   }
-  const PAGE_NEED = { "new-order": "create_order", reports: "view_reports", finance: "view_reports", inventory: "add_expense", employees: "payroll", closures: "view_closures", audit: "audit_log", profile: "admin_settings", settings: "admin_settings", access: "manage_users" };
+  // الصفحة الأولى لكل مستخدم: الرئيسية لمن يملكها، وإلا شاشة الطلب الجديد (الموظف)
+  function homePage() { return can("view_dashboard") ? "dashboard" : can("create_order") ? "new-order" : "orders"; }
+  const PAGE_NEED = { dashboard: "view_dashboard", balances: "view_balances", "new-order": "create_order", reports: "view_reports", finance: "view_reports", inventory: "add_expense", employees: "payroll", closures: "view_closures", audit: "audit_log", profile: "admin_settings", settings: "admin_settings", access: "manage_users" };
   function denied() { toast(AX("e_noperm")); }
   window.L997Auth = { can: (p) => can(p), user: () => me, role: () => role };
 
@@ -2098,7 +2102,7 @@
     save("l997_role", me ? roleLabel() : "—");
     save("l997_role_id", me ? role : "");
     const hiddenPageBtn = document.querySelector(`.nav-item[data-page="${currentPage}"]`);
-    if (me && hiddenPageBtn && hiddenPageBtn.classList.contains("admin-hidden")) openPage("dashboard");
+    if (me && hiddenPageBtn && hiddenPageBtn.classList.contains("admin-hidden")) openPage(homePage());
   }
 
   /* ---------- موافقة المشرف (Override): صلاحية حساسة بيد موظف بلا صلاحية تتطلب مدير/مالك حاضراً ---------- */
@@ -2680,7 +2684,7 @@
         save("l997_user", e.name);
         // بعد تحديث تلقائي من السحابة نعود لنفس الصفحة
         let back = ""; try { back = sessionStorage.getItem("l997_cloud_page") || ""; sessionStorage.removeItem("l997_cloud_page"); } catch (err) { back = ""; }
-        hideAuth(); applyRole(); startIdle(); openPage(back && document.getElementById("page-" + back) ? back : "dashboard");
+        hideAuth(); applyRole(); startIdle(); openPage(back && document.getElementById("page-" + back) ? back : homePage());
         if (CLOUD) CLOUD.setUser(cloudOn() ? e : null);
         return;
       }
@@ -4655,24 +4659,52 @@
     });
   }
 
+  // ما على العميل: المبلغ، تاريخ أقدم مبلغ لم يُسدَّد، وآخر دفعة (من الطلبات أو السداد/الإيداع)
+  function customerDebtInfo(c, cs) {
+    const due = cs.rows.filter((r) => r.remaining > 0 && (r.state === "debt" || r.state === "partial" || r.state === "due_now"));
+    const since = due.map((r) => (r.state === "due_now" ? r.order.readyAt || r.order.createdAt : FIN.orderPaidAt(r.order))).filter(Boolean).sort()[0] || null;
+    const pays = [];
+    orders.forEach((o) => { if (o.customerId === c.id && o.paymentConfirmed && Number(o.payment.paid) > 0 && o.payment.method !== "balance" && o.payment.method !== "unpaid") pays.push(o.paidAt); });
+    ledger.forEach((tx) => { if (tx.customerId === c.id && tx.type === "credit" && Number(tx.amount) > 0 && !tx.reversedBy) pays.push(tx.at); });
+    const lastPay = pays.filter(Boolean).sort().pop() || null;
+    const days = (iso) => (iso ? Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)) : null);
+    return { owed: cs.totalOwed, since, sinceDays: days(since), lastPay, lastPayDays: days(lastPay) };
+  }
+  ["customerFilter", "customerSort"].forEach((id) => document.getElementById(id)?.addEventListener("change", () => renderCustomersPage()));
   function renderCustomersPage() {
     const body = document.getElementById("customersBody");
+    const sumBox = document.getElementById("customerDebtSummary");
     if (customers.length === 0) {
-      body.innerHTML = `<tr><td colspan="7" class="empty-state compact">${t("empty_customers")}</td></tr>`;
+      body.innerHTML = `<tr><td colspan="9" class="empty-state compact">${t("empty_customers")}</td></tr>`;
+      if (sumBox) sumBox.hidden = true;
       return;
     }
     const cq = (document.getElementById("customerSearch")?.value || "").trim();
-    const shown = customers.filter((c) => custMatchesQuery(c, cq));
-    if (shown.length === 0) { body.innerHTML = `<tr><td colspan="7" class="empty-state compact">${lang === "en" ? "No matching customers" : "لا يوجد عميل مطابق"}</td></tr>`; return; }
+    const filter = document.getElementById("customerFilter")?.value || "all";
+    const sort = document.getElementById("customerSort")?.value || "recent";
+    const info = new Map(customers.map((c) => { const cs = FIN.customerSummary(c, orders, ledger); return [c.id, { cs, d: customerDebtInfo(c, cs) }]; }));
+    let shown = customers.filter((c) => custMatchesQuery(c, cq) && (filter !== "owes" || info.get(c.id).d.owed > 0));
+    if (sort === "oldest") shown = shown.slice().sort((a, b) => String(info.get(a.id).d.since || "9999").localeCompare(String(info.get(b.id).d.since || "9999")));
+    else if (sort === "largest") shown = shown.slice().sort((a, b) => info.get(b.id).d.owed - info.get(a.id).d.owed);
+    if (sumBox) {
+      const owing = shown.filter((c) => info.get(c.id).d.owed > 0);
+      sumBox.hidden = !owing.length;
+      sumBox.innerHTML = owing.length ? `💰 ${owing.length} ${lang === "en" ? "customers owe" : "عميل عليهم مبالغ"} — ${lang === "en" ? "total" : "الإجمالي"} <b>${money(owing.reduce((a, c) => a + info.get(c.id).d.owed, 0))}</b>${owing.some((c) => info.get(c.id).d.sinceDays > 30) ? ` — <span style="color:var(--danger)">${owing.filter((c) => info.get(c.id).d.sinceDays > 30).length} ${lang === "en" ? "over 30 days" : "أكثر من 30 يوماً"}</span>` : ""}` : "";
+    }
+    if (shown.length === 0) { body.innerHTML = `<tr><td colspan="9" class="empty-state compact">${filter === "owes" && !cq ? (lang === "en" ? "No customer owes the shop money ✓" : "لا يوجد عميل عليه مبالغ ✓") : lang === "en" ? "No matching customers" : "لا يوجد عميل مطابق"}</td></tr>`; return; }
+    const ago = (n) => (n === null ? "" : n === 0 ? (lang === "en" ? "today" : "اليوم") : lang === "en" ? `${n} day${n === 1 ? "" : "s"} ago` : `منذ ${n} يوم`);
+    const ageColor = (n) => (n > 30 ? "var(--danger)" : n > 14 ? "var(--warning,#b8860b)" : "inherit");
     body.innerHTML = shown.map((c) => {
       const custOrders = orders.filter((o) => o.customerId === c.id);
-      const cs = FIN.customerSummary(c, orders, ledger);
+      const { cs, d } = info.get(c.id);
+      const lastPayCell = d.lastPay ? `${fmtDT(d.lastPay).split(/[،,]/)[0]}<div class="pos-cart-row-sub" style="color:${d.owed > 0 ? ageColor(d.lastPayDays) : "inherit"}">${ago(d.lastPayDays)}</div>` : d.owed > 0 ? `<span style="color:var(--danger)">${lang === "en" ? "never paid" : "لم يدفع بعد"}</span>` : "—";
+      const sinceCell = d.owed > 0 && d.since ? `<b style="color:${ageColor(d.sinceDays)}">${d.sinceDays} ${lang === "en" ? "days" : "يوم"}</b><div class="pos-cart-row-sub">${fmtDT(d.since).split(/[،,]/)[0]}</div>` : "—";
       const last = custOrders[0];
       const activePkgs = activePackagesForCustomer(c.id);
       const pkgNote = activePkgs.length ? `<div class="pos-cart-row-sub">${activePkgs.map((p) => `${esc(p.name)}: ${p.remainingPieces}/${p.totalPieces}`).join(" · ")}</div>` : "";
       return `<tr>
         <td><button type="button" class="link-btn cust-open" data-profile="${c.id}"><strong>${esc(c.name)}</strong></button>${pkgNote}</td><td dir="ltr">${esc(c.phone)}</td><td>${esc(c.area) || "—"}</td>
-        <td>${cs.totalOwed > 0 ? `<span class="cust-chip debt">${lang === "en" ? "Owes" : "عليه"} ${money(cs.totalOwed)}</span>` : cs.prepaid > 0 ? `<span class="cust-chip credit">${lang === "en" ? "Credit" : "رصيد"} ${money(cs.prepaid)}</span>` : money(0)}</td><td>${custOrders.length}</td><td>${last ? fmtDT(last.createdAt) : "—"}</td>
+        <td>${cs.totalOwed > 0 ? `<span class="cust-chip debt">${lang === "en" ? "Owes" : "عليه"} ${money(cs.totalOwed)}</span>` : cs.prepaid > 0 ? `<span class="cust-chip credit">${lang === "en" ? "Credit" : "رصيد"} ${money(cs.prepaid)}</span>` : money(0)}</td><td>${lastPayCell}</td><td>${sinceCell}</td><td>${custOrders.length}</td><td>${last ? fmtDT(last.createdAt) : "—"}</td>
         <td class="row-actions">
           <button class="mini-btn" data-profile="${c.id}">📋 ${lang === "en" ? "File" : "ملف العميل"}</button>
           <button class="mini-btn" data-order-for="${c.id}">${t("nav_neworder")}</button>
@@ -4788,9 +4820,9 @@
         <div class="row-actions" style="margin:14px 0;flex-wrap:wrap">
           <button class="primary-btn" type="button" id="cpNewOrder">${L.neworder}</button>
           ${settings.packageDefs.length ? `<button class="secondary-btn" type="button" id="cpSellPkg">🎟 ${en ? "Sell package" : "بيع باقة"}</button>` : ""}
-          ${cs.debt > 0 && can("balance_tx") ? `<button class="secondary-btn" type="button" id="cpSettle">${L.settle}</button>` : ""}
+          ${can("balance_tx") ? `<button class="secondary-btn" type="button" id="cpSettle">${cs.debt > 0 ? L.settle : en ? "💵 Add deposit" : "💵 إيداع رصيد"}</button>` : ""}
           ${cs.totalOwed > 0 ? `<button class="whatsapp-btn" type="button" id="cpRemind">${L.wa}</button>` : ""}
-          <button class="ghost-btn" type="button" id="cpStatement">${L.stmt}</button>
+          ${can("view_balances") ? `<button class="ghost-btn" type="button" id="cpStatement">${L.stmt}</button>` : ""}
         </div>
         <div class="cp-orders">${rowsHtml || `<div class="empty-state compact">${L.none}</div>`}</div>
         ${paymentsHtml}
@@ -4798,13 +4830,13 @@
     const q = (id) => document.getElementById(id);
     q("closeCustomerProfile").onclick = () => customerProfileDialog.close();
     q("cpNewOrder").onclick = () => { customerProfileDialog.close(); openPage("new-order"); selectCustomerForOrder(c, true); };
-    if (q("cpSettle")) q("cpSettle").onclick = () => balTxForm({ custId: c.id, type: "credit", amount: cs.debt, note: "" });
+    if (q("cpSettle")) q("cpSettle").onclick = () => balTxForm({ custId: c.id, type: "credit", amount: cs.debt > 0 ? cs.debt : "", note: "", onDone: renderCustomerProfile });
     if (q("cpRemind")) q("cpRemind").onclick = () => {
       const lines = cs.rows.filter((r) => r.remaining > 0 && r.state !== "in_progress").map((r) => `• #${r.order.number}: ${money(r.remaining)}`).join("\n");
       openWhatsApp(c.phone, waMsg("due", { name: c.name, amount: money(cs.totalOwed), lines }));
       logActivity(`تذكير واتساب بالمستحق — ${c.name} — ${money(cs.totalOwed)}`);
     };
-    q("cpStatement").onclick = () => { customerProfileDialog.close(); bv.stmt = c.id; openPage("balances"); };
+    if (q("cpStatement")) q("cpStatement").onclick = () => { customerProfileDialog.close(); bv.stmt = c.id; openPage("balances"); };
     if (q("cpSellPkg")) q("cpSellPkg").onclick = () => requireOverride("balance_tx", "بيع باقة لعميل", () => sellPackageToCustomer(c.id));
     document.querySelectorAll("#customerProfileContent [data-pkg-fix]").forEach((b) => b.addEventListener("click", () => {
       const u = pu.find((x) => x.pkg.id === b.dataset.pkgFix); if (!u) return;

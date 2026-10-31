@@ -62,11 +62,11 @@
         </div>
       </div>
       <nav class="nav-list">
-        <button type="button" class="nav-item active" data-page="dashboard">⌂ <span data-i18n="nav_dashboard">الرئيسية</span></button>
+        <button type="button" class="nav-item active" data-need="view_dashboard" data-page="dashboard">⌂ <span data-i18n="nav_dashboard">الرئيسية</span></button>
         <button type="button" class="nav-item" data-need="create_order" data-page="new-order">＋ <span data-i18n="nav_neworder">طلب جديد</span></button>
         <button type="button" class="nav-item" data-page="orders">▦ <span data-i18n="nav_orders">الطلبات</span></button>
         <button type="button" class="nav-item" data-page="customers">◉ <span data-i18n="nav_customers">العملاء</span></button>
-        <button type="button" class="nav-item" data-page="balances">◈ <span data-i18n="nav_balances">الأرصدة</span></button>
+        <button type="button" class="nav-item" data-need="view_balances" data-page="balances">◈ <span data-i18n="nav_balances">الأرصدة</span></button>
         <button type="button" class="nav-item" data-need="view_reports" data-page="reports">▥ <span data-i18n="nav_reports">التقارير</span></button>
 
         <button type="button" class="nav-item" data-need="view_reports" data-page="finance">◫ <span data-i18n="nav_finance">المالية</span></button>
@@ -342,12 +342,17 @@
             <div><h3 data-i18n="nav_customers">العملاء</h3><p data-i18n="customers_sub">بيانات العملاء، الطلبات السابقة، والأرصدة</p></div>
             <button class="primary-btn" id="addCustomerBtn">＋ <span data-i18n="btn_add_customer">إضافة عميل</span></button>
           </div>
-          <input type="search" id="customerSearch" class="inv-search" placeholder="ابحث بالاسم أو رقم الجوال" />
+          <div class="cust-tools">
+            <input type="search" id="customerSearch" class="inv-search" placeholder="ابحث بالاسم أو رقم الجوال" />
+            <select id="customerFilter"><option value="all">كل العملاء</option><option value="owes">عليهم مبالغ للمحل</option></select>
+            <select id="customerSort"><option value="recent">آخر زيارة</option><option value="oldest">الأقدم ديناً</option><option value="largest">الأكبر ديناً</option></select>
+          </div>
+          <div id="customerDebtSummary" class="cust-debt-summary" hidden></div>
           <div class="table-wrap">
             <table>
               <thead><tr>
                 <th data-i18n="th_customer">العميل</th><th data-i18n="th_phone">الجوال</th><th data-i18n="th_area">المنطقة</th>
-                <th data-i18n="th_balance">الرصيد</th><th data-i18n="th_order_count">عدد الطلبات</th><th data-i18n="th_last_visit">آخر زيارة</th><th data-i18n="th_actions">الإجراءات</th>
+                <th data-i18n="th_balance">الرصيد</th><th>آخر دفعة</th><th>الدين منذ</th><th data-i18n="th_order_count">عدد الطلبات</th><th data-i18n="th_last_visit">آخر زيارة</th><th data-i18n="th_actions">الإجراءات</th>
               </tr></thead>
               <tbody id="customersBody"></tbody>
             </table>

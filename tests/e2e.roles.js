@@ -82,8 +82,7 @@ function check(name, cond, detail) {
 
   // Worker must not see money figures or restricted pages
   await nav("dashboard");
-  const dash = await page.textContent("#metricsGrid");
-  check("worker dashboard hides financial cards", !/المبيعات|المحصّل|الربح|ديون/.test(dash), dash.replace(/\s+/g, " ").slice(0, 120));
+  check("worker cannot open the home page (money figures) at all", !(await page.evaluate(() => document.getElementById("page-dashboard").classList.contains("active"))) && !(await page.isVisible('.nav-item[data-page="dashboard"]')));
   for (const pg of ["reports", "finance", "closures", "settings", "access", "audit", "employees"]) {
     await nav(pg);
     const active = await page.evaluate(() => document.querySelector(".page.active")?.id);

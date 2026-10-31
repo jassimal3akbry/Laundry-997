@@ -73,7 +73,9 @@ function check(name, cond, detail) {
   // Cashier collects order 1 (0.800 cash) and a 5.000 cash deposit
   await nav("orders");
   await page.click("#ordersBody tr:nth-child(2) [data-view]"); await page.click("#advanceStatusBtn"); await submit(); await later(); await closeDialogs();
-  await nav("balances"); await page.click('[data-bact="dep"]'); await page.fill("#qf_amount", "5"); await page.selectOption("#qf_notify", "no"); await submit();
+  // workers have no Balances page: the deposit is taken from the customer file
+  await page.evaluate(() => window.openCustomerProfile997(JSON.parse(localStorage.getItem("l997_customers"))[0].id)); await page.click("#cpSettle");
+  await page.fill("#qf_amount", "5"); await page.selectOption("#qf_notify", "no"); await submit(); await closeDialogs();
   const o = await page.evaluate(() => JSON.parse(localStorage.getItem("l997_orders")).find((x) => x.status === "ready"));
   const led = await page.evaluate(() => JSON.parse(localStorage.getItem("l997_ledger")));
   const me = await page.evaluate(() => window.L997Auth.user().id);
