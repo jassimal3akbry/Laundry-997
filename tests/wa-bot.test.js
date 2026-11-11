@@ -360,3 +360,10 @@ test("one webhook with several changes: a staff echo and a customer message are 
   assert.equal(w.threads[0].mode, "human"); assert.equal(ai.calls.length, 0); assert.equal(w.sent.length, 0);
   assert.equal(w.msgs.length, 2);
 });
+
+test("if the reply says «I transferred you» without using the hand-off tool, the chat is really handed to staff", async () => {
+  const handle = await load(), w = world(), ai = fakeAI([text("تمام، حولتك للموظف وبيرد عليك هنا قريباً")]);
+  await handle(hook(inbound("97333111111", "عندي سؤال عن بقعة")), ENV, { fetch: w.f, ai });
+  assert.equal(w.threads[0].mode, "human"); assert.equal(w.threads[0].waiting, true); assert.equal(w.threads[0].flag, "human");
+  assert.ok(w.msgs.some((m) => m.dir === "note" && /طلب التحدث مع موظف/.test(m.body)));
+});

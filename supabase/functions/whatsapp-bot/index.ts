@@ -378,6 +378,10 @@ async function handleValue(env, deps, value) {
       try {
         const out = await askClaude(deps.ai, env, system, msgs, ctx);
         reply = out.text || (out.refusal ? "عذراً، ما أقدر أساعد في هذا الطلب. تبي أحولك للموظف؟" : "");
+        // the reply says the chat was handed to staff but the hand-off tool was not used: make it true (never a false promise)
+        if (reply && !(ctx.patch && ctx.patch.flag) && /حوّلت|حولت|حولتك|حوّلتك|بلغت الموظف|بلّغت الموظف|transferred|handed (your|the) (chat|conversation)|passed (it|your (details|message|request)) (on )?to (our |a )?(staff|team)/i.test(reply)) {
+          await runTool("request_human", { reason: `تحويل تلقائي — رد المساعد ذكر التحويل: ${text.slice(0, 160)}` }, ctx);
+        }
       } catch (e) {
         const why = `${(e && e.status) || ""} ${(e && e.message) || e}`.trim().slice(0, 400);
         console.error("claude", why);
