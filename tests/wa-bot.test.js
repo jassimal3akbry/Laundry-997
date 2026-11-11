@@ -367,3 +367,15 @@ test("if the reply says «I transferred you» without using the hand-off tool, t
   assert.equal(w.threads[0].mode, "human"); assert.equal(w.threads[0].waiting, true); assert.equal(w.threads[0].flag, "human");
   assert.ok(w.msgs.some((m) => m.dir === "note" && /طلب التحدث مع موظف/.test(m.body)));
 });
+
+test("order status: a delivered order put on the customer's account is reported as on account (not «fully paid»), with the debt", async () => {
+  const handle = await load(), w = world();
+  w.recs.find((r) => r.record_id === "c1").data.balance = -0.5;
+  w.recs.push({ shop_id: SHOP, deleted: false, collection: "orders", record_id: "o9", data: { id: "o9", number: "00001", customerId: "c1", status: "delivered", items: [{ qty: 2 }], payment: { total: 0.5, paid: 0, method: "unpaid" }, payLater: true, paymentConfirmed: true, createdAt: "2026-10-31T10:00:00Z" } });
+  let result = null;
+  const ai = fakeAI([tool("get_my_orders", {}), (p) => { result = JSON.parse(p.messages[p.messages.length - 1].content[0].content); return text("ok"); }]);
+  await handle(hook(inbound("97333111111", "عندي ثياب وياكم؟")), ENV, { fetch: w.f, ai });
+  const o9 = result.orders.find((o) => o.number === "00001");
+  assert.match(o9.payment, /آجل/); assert.match(result.account_balance, /0\.500/);
+  assert.match(ai.calls[0].system[0].text, /ويانا/);
+});

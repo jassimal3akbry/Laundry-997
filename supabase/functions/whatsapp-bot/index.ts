@@ -135,6 +135,8 @@ const RULES = `أنت المساعد الافتراضي لمغسلة على وا
 9) رسائل الصوت والصور: قل إنك تستقبل النص فقط، واطلب كتابة الطلب أو عرض التحويل للموظف.
 10) اللغة: إذا اختار العميل «العربية» أو «English» (زر أو كتابة) أو كتب «عربي / Arabic / English / انجليزي»، التزم بهذه اللغة في كل الردود حتى يغيّرها. بالإنجليزية اكتب إنجليزية واضحة وودودة، وأسماء الأصناف بالإنجليزية من بيانات المحل، والعملة BHD.
 11) القائمة: إذا كانت رسالة العميل تحية فقط أو اختيار لغة أو «قائمة / menu / مساعدة»، رحّب واعرض باختصار ما تقدر تساعد فيه بأسطر مرقمة: 1 الأسعار والخدمات · 2 الباقات · 3 حجز استلام من البيت · 4 توصيل طلب جاهز · 5 حالة طلبي · 6 شكوى أو ملاحظة · 7 التحدث مع موظف. وإذا كتب رقماً من القائمة فنفّذ ما يقابله.
+14) أنت تتكلم باسم المحل بصيغة «نحن»: قل «عندك ثياب ويانا / عندنا / نستلم / بنرد عليك» — لا تقل أبداً «وياهم / عندهم / المحل عندهم» كأنك شخص خارج المحل. «الموظف» شخص من فريقنا.
+15) الدفع: اعتمد على نتيجة get_my_orders كما هي — «مدفوع» أو «آجل على الحساب» أو «غير مدفوع». إذا كان على العميل دين في account_balance اذكره بلطف. لا تقل «مدفوع بالكامل» إلا إذا كانت النتيجة «مدفوع» ولا يوجد دين.
 13) أرقام الهواتف: لا تكتب أي رقم هاتف في ردك أبداً — لا رقم العميل ولا رقماً كتبه العميل ولا أي رقم آخر (رقم المحل فقط إذا سأل عنه). إذا طلب العميل التحقق من طلب برقم آخر أو باسم شخص آخر: لا تستطيع ذلك لحماية خصوصية العملاء — حوّل للموظف بـ request_human واكتب الرقم في سبب التحويل فقط، وقل للعميل «وصلت المعلومة للموظف وبيتأكد لك» بدون ذكر الرقم.
 12) توصيل طلب جاهز إلى البيت: تحقق بـ get_my_orders، ثم اجمع المنطقة والعنوان واليوم والوقت، لخّص واطلب الموافقة، ثم استخدم request_delivery. قل إن الطلب وصل للمحل والموظف يؤكد الموعد — لا تقل إنه تأكد.`;
 
@@ -169,7 +171,8 @@ async function runTool(name, input, ctx) {
   if (name === "get_my_orders") {
     if (!cust) return { found: false, note: "No customer file with this phone number." };
     const os = (await records(D, shop, "orders", `&data->>customerId=eq.${enc(cust.id)}&order=updated_at.desc&limit=8`)).filter((o) => o.status !== "cancelled").slice(0, 5);
-    return { found: true, orders: os.map((o) => ({ number: o.number, status: STATUS_AR[o.status] || o.status, pieces: (o.items || []).reduce((a, it) => a + (Number(it.qty) || 0), 0), total: bd((o.payment || {}).total), still_owed: bd(o.paymentConfirmed ? 0 : owed(o)), created: String(o.createdAt || "").slice(0, 10), home_delivery: o.delivery && o.delivery.drop ? ({ pending: "بانتظار التجهيز", onway: "خرج للتوصيل", done: "وُصّل" })[o.delivery.dropStatus || "pending"] : "لا" })) };
+    const bal = r3(Number(cust.balance) || 0);
+    return { found: true, account_balance: bal < 0 ? `على العميل ${bd(-bal)} (دين)` : bal > 0 ? `للعميل رصيد ${bd(bal)}` : "لا شيء", orders: os.map((o) => ({ number: o.number, status: STATUS_AR[o.status] || o.status, pieces: (o.items || []).reduce((a, it) => a + (Number(it.qty) || 0), 0), total: bd((o.payment || {}).total), payment: !o.paymentConfirmed ? `غير مدفوع بعد — المطلوب ${bd(owed(o))}` : ((o.payment || {}).method === "unpaid" || o.payLater) ? "سُلّم على الحساب (آجل) — يُسدَّد من رصيد الحساب" : "مدفوع", created: String(o.createdAt || "").slice(0, 10), home_delivery: o.delivery && o.delivery.drop ? ({ pending: "بانتظار التجهيز", onway: "خرج للتوصيل", done: "وُصّل" })[o.delivery.dropStatus || "pending"] : "لا" })) };
   }
   if (name === "get_my_packages") {
     if (!cust) return { found: false };
