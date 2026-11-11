@@ -212,9 +212,12 @@ async function runTool(name, input, ctx) {
   }
   if (name === "request_human") {
     const avail = staffAvailable(botCfg(settings));
-    ctx.patch = { ...(ctx.patch || {}), waiting: true, flag: "human", ...(avail ? { mode: "human", human_at: new Date().toISOString() } : {}) };
+    // the assistant goes quiet only when the customer asked for a person; otherwise staff are alerted and it keeps helping
+    const asked = HANDOFF_WORDS.test(String(ctx.text || ""));
+    ctx.patch = { ...(ctx.patch || {}), waiting: true, flag: "human", ...(avail && asked ? { mode: "human", human_at: new Date().toISOString() } : {}) };
     ctx.note = `🙋 طلب التحدث مع موظف: ${input.reason || ""}`;
-    return avail ? { transferred: true, note: "Staff notified; the assistant stops replying in this chat." } : { transferred: false, staff_available: false, hours: `${botCfg(settings).from}–${botCfg(settings).to}`, note: "Staff are not available now. Offer to leave a message or a call back." };
+    return avail && !asked ? { transferred: false, staff_notified: true, note: "Staff were alerted and will follow up in this chat. Keep helping the customer yourself; do not say the chat was transferred." }
+      : avail ? { transferred: true, note: "Staff notified; the assistant stops replying in this chat." } : { transferred: false, staff_available: false, hours: `${botCfg(settings).from}–${botCfg(settings).to}`, note: "Staff are not available now. Offer to leave a message or a call back." };
   }
   if (name === "leave_message") {
     ctx.patch = { ...(ctx.patch || {}), waiting: true, flag: "callback" };
@@ -282,7 +285,7 @@ async function verifySig(env, raw, header) {
   return diff === 0;
 }
 const NO_AI = "هلا والله 🌸 وصلتنا رسالتك، والموظف بيرد عليك هنا بأقرب وقت.\nHello! We received your message — our team will reply here shortly.";
-const HANDOFF_WORDS = /(اكلم|أكلم|كلم|تواصل|أتواصل|اتواصل)\s*(مع)?\s*(ال)?(عامل|موظف|شخص|انسان|إنسان|احد|أحد)|حول(ني)?\s*(لل|ل|على|إلى|الى)?\s*(ال)?(موظف|عامل)|موظف\s*لو\s*سمحت|\b(human|agent|real person|talk to (a )?(person|human|staff))\b/i;
+const HANDOFF_WORDS = /^\s*[7٧]\s*$|(ابي|أبي|ابغى|أبغى|بغيت|اريد|أريد|ودي)\s*(ا?كلم\s*)?(ال)?(موظف|عامل|شخص|احد|أحد|المسؤول|المدير)|(اكلم|أكلم|كلم|تواصل|أتواصل|اتواصل)\s*(مع)?\s*(ال)?(عامل|موظف|شخص|انسان|إنسان|احد|أحد|المسؤول|المدير)|حولني|حول(ني)?\s*(لل|ل|على|إلى|الى)?\s*(ال)?(موظف|عامل)|موظف\s*لو\s*سمحت|\b(human|agent|real person|talk to (a )?(person|human|staff))\b/i;
 
 async function handleInbound(env, deps, payload) {
   const values = [];
@@ -354,7 +357,7 @@ async function handleValue(env, deps, value) {
       resumedAfterHandoff = !staffActive && !backToBot;
       await D.patch(`wa_threads?shop_id=eq.${shop}&phone=eq.${phone}`, { mode: "bot" }); // the chat stays flagged for staff (waiting)
     }
-    const ctx = { D, shop, phone, cust, thread, settings, patch: null, note: null, flag: null };
+    const ctx = { D, shop, phone, cust, thread, settings, text, patch: null, note: null, flag: null };
     let reply = "";
     if (media) {
       ctx.patch = { waiting: true, flag: "media" };

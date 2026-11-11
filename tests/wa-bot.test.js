@@ -364,7 +364,8 @@ test("one webhook with several changes: a staff echo and a customer message are 
 test("if the reply says «I transferred you» without using the hand-off tool, the chat is really handed to staff", async () => {
   const handle = await load(), w = world(), ai = fakeAI([text("تمام، حولتك للموظف وبيرد عليك هنا قريباً")]);
   await handle(hook(inbound("97333111111", "عندي سؤال عن بقعة")), ENV, { fetch: w.f, ai });
-  assert.equal(w.threads[0].mode, "human"); assert.equal(w.threads[0].waiting, true); assert.equal(w.threads[0].flag, "human");
+  // staff are alerted (flag), but the customer did not ask for a person → the assistant keeps answering
+  assert.equal(w.threads[0].mode, "bot"); assert.equal(w.threads[0].waiting, true); assert.equal(w.threads[0].flag, "human");
   assert.ok(w.msgs.some((m) => m.dir === "note" && /طلب التحدث مع موظف/.test(m.body)));
 });
 
@@ -400,4 +401,23 @@ test("handed to staff but nobody replied: quiet for 2 h, then the assistant answ
   ai = fakeAI([text("x")]);
   await handle(hook(inbound("97333111111", "شكراً")), ENV, { fetch: w3.f, ai });
   assert.equal(ai.calls.length, 0);
+});
+
+test("the model hands over on its own (no request from the customer): staff are alerted but the assistant keeps replying", async () => {
+  const handle = await load(), w = world();
+  const ai = fakeAI([tool("request_human", { reason: "question about a stain" }), text("نبلّغ الموظف يتأكد لك، وبنساعدك هني")]);
+  await handle(hook(inbound("97333111111", "عندي بقعة أحمر شفايف تطلع؟")), ENV, { fetch: w.f, ai });
+  assert.equal(w.threads[0].mode, "bot"); assert.equal(w.threads[0].waiting, true);
+  const ai2 = fakeAI([text("تمام 👍")]);
+  await handle(hook(inbound("97333111111", "وكم سعر الثوب؟")), ENV, { fetch: w.f, ai: ai2 });
+  assert.equal(ai2.calls.length, 1, "the next message is answered");
+});
+
+test("asking for a person in different words (ابي موظف / 7 from the menu) hands the chat over", async () => {
+  for (const said of ["ابي موظف", "7", "ابغى اكلم المسؤول"]) {
+    const handle = await load(), w = world();
+    const ai = fakeAI([tool("request_human", { reason: "asked" }), text("حولتك للموظف")]);
+    await handle(hook(inbound("97333111111", said)), ENV, { fetch: w.f, ai });
+    assert.equal(w.threads[0].mode, "human", said);
+  }
 });
