@@ -64,7 +64,7 @@ function world(opts = {}) {
     if (method === "POST") {
       const b = JSON.parse(opt.body);
       if (table === "wa_messages" && b.wa_id && msgs.some((m) => m.wa_id === b.wa_id)) return res({ code: "23505" }, 409);
-      const row = { ...b, ...(table === "wa_messages" ? { id: mid++ } : {}), ...(table === "wa_threads" ? { mode: b.mode || "bot", waiting: !!b.waiting, unread: b.unread || 0 } : {}) };
+      const row = { ...b, ...(table === "wa_messages" ? { id: mid++, at: new Date().toISOString() } : {}), ...(table === "wa_threads" ? { mode: b.mode || "bot", waiting: !!b.waiting, unread: b.unread || 0 } : {}) };
       store.push(row); return res([row], 201);
     }
     if (method === "PATCH") {
@@ -323,4 +323,40 @@ test("delivery of a ready order is filed for staff (not confirmed) and the chat 
   assert.match(note.body, /طلب توصيل للطلب #00007/); assert.match(note.body, /مجمع 901/);
   assert.equal(w.threads[0].flag, "pickup"); assert.equal(w.threads[0].waiting, true);
   assert.ok(!/تأكد|تم الحجز/.test(w.sent[0].text.body.replace("بيأكد", "")));
+});
+
+test("a 👍 reaction is not answered and not stored as a message", async () => {
+  const handle = await load(), w = world(), ai = fakeAI([text("x")]);
+  await handle(hook({ entry: [{ changes: [{ value: { contacts: [], messages: [{ from: "97333111111", id: "wamid.r1", type: "reaction", reaction: { message_id: "wamid.out1", emoji: "👍" } }] } }] }] }), ENV, { fetch: w.f, ai });
+  assert.equal(ai.calls.length, 0); assert.equal(w.sent.length, 0); assert.equal(w.msgs.length, 0);
+});
+
+test("photos/videos: one fixed acknowledgement (no AI), the chat is flagged for staff, a second photo right after is not answered again", async () => {
+  const handle = await load(), w = world(), ai = fakeAI([text("x")]);
+  const media = (id) => ({ entry: [{ changes: [{ value: { contacts: [], messages: [{ from: "97333111111", id, type: "video", video: { id: "v" } }] } }] }] });
+  await handle(hook(media("wamid.v1")), ENV, { fetch: w.f, ai });
+  await handle(hook(media("wamid.v2")), ENV, { fetch: w.f, ai });
+  assert.equal(ai.calls.length, 0);
+  assert.equal(w.sent.length, 1); assert.match(w.sent[0].text.body, /الموظف بيشوفها/);
+  assert.equal(w.threads[0].waiting, true); assert.equal(w.threads[0].flag, "media");
+});
+
+test("the assistant never sends a phone number (e.g. another customer's) — only the shop's own", async () => {
+  const handle = await load(), w = world(), ai = fakeAI([text("حولت المحادثة للموظف وبيتأكد من الرقم 39458208 — وللتواصل: 39599902")]);
+  w.recs.find((r) => r.collection === "profile").data.phone = "+97339599902";
+  await handle(hook(inbound("97333111111", "طلبي على رقم 39458208")), ENV, { fetch: w.f, ai });
+  const body = w.sent[0].text.body;
+  assert.ok(!/39458208/.test(body), body); assert.match(body, /39599902/);
+  assert.match(ai.calls[0].system[0].text, /لا تكتب أي رقم هاتف/);
+});
+
+test("one webhook with several changes: a staff echo and a customer message are both handled (assistant stays quiet)", async () => {
+  const handle = await load(), w = world(), ai = fakeAI([text("x")]);
+  const body = { entry: [{ changes: [
+    { field: "smb_message_echoes", value: { message_echoes: [{ from: "15556463423", to: "97333111111", id: "wamid.e9", type: "text", text: { body: "هلا، معك الموظف" } }] } },
+    { field: "messages", value: { contacts: [], messages: [{ from: "97333111111", id: "wamid.in9", type: "text", text: { body: "تمام شكراً" } }] } },
+  ] }] };
+  await handle(hook(body), ENV, { fetch: w.f, ai });
+  assert.equal(w.threads[0].mode, "human"); assert.equal(ai.calls.length, 0); assert.equal(w.sent.length, 0);
+  assert.equal(w.msgs.length, 2);
 });

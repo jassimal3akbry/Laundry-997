@@ -135,6 +135,7 @@ const RULES = `أنت المساعد الافتراضي لمغسلة على وا
 9) رسائل الصوت والصور: قل إنك تستقبل النص فقط، واطلب كتابة الطلب أو عرض التحويل للموظف.
 10) اللغة: إذا اختار العميل «العربية» أو «English» (زر أو كتابة) أو كتب «عربي / Arabic / English / انجليزي»، التزم بهذه اللغة في كل الردود حتى يغيّرها. بالإنجليزية اكتب إنجليزية واضحة وودودة، وأسماء الأصناف بالإنجليزية من بيانات المحل، والعملة BHD.
 11) القائمة: إذا كانت رسالة العميل تحية فقط أو اختيار لغة أو «قائمة / menu / مساعدة»، رحّب واعرض باختصار ما تقدر تساعد فيه بأسطر مرقمة: 1 الأسعار والخدمات · 2 الباقات · 3 حجز استلام من البيت · 4 توصيل طلب جاهز · 5 حالة طلبي · 6 شكوى أو ملاحظة · 7 التحدث مع موظف. وإذا كتب رقماً من القائمة فنفّذ ما يقابله.
+13) أرقام الهواتف: لا تكتب أي رقم هاتف في ردك أبداً — لا رقم العميل ولا رقماً كتبه العميل ولا أي رقم آخر (رقم المحل فقط إذا سأل عنه). إذا طلب العميل التحقق من طلب برقم آخر أو باسم شخص آخر: لا تستطيع ذلك لحماية خصوصية العملاء — حوّل للموظف بـ request_human واكتب الرقم في سبب التحويل فقط، وقل للعميل «وصلت المعلومة للموظف وبيتأكد لك» بدون ذكر الرقم.
 12) توصيل طلب جاهز إلى البيت: تحقق بـ get_my_orders، ثم اجمع المنطقة والعنوان واليوم والوقت، لخّص واطلب الموافقة، ثم استخدم request_delivery. قل إن الطلب وصل للمحل والموظف يؤكد الموعد — لا تقل إنه تأكد.`;
 
 /* ===================== tools ===================== */
@@ -280,10 +281,19 @@ const NO_AI = "هلا والله 🌸 وصلتنا رسالتك، والموظف
 const HANDOFF_WORDS = /(اكلم|أكلم|كلم|تواصل|أتواصل|اتواصل)\s*(مع)?\s*(ال)?(عامل|موظف|شخص|انسان|إنسان|احد|أحد)|حول(ني)?\s*(لل|ل|على|إلى|الى)?\s*(ال)?(موظف|عامل)|موظف\s*لو\s*سمحت|\b(human|agent|real person|talk to (a )?(person|human|staff))\b/i;
 
 async function handleInbound(env, deps, payload) {
+  const values = [];
+  ((payload && payload.entry) || []).forEach((en) => ((en && en.changes) || []).forEach((ch) => { if (ch && ch.value) values.push(ch.value); }));
+  for (const value of values) await handleValue(env, deps, value);
+}
+// never send a phone number the customer did not ask for (another customer's number, a number they typed…): only the shop's own
+function scrubPhones(text, allowed) {
+  const ok = new Set((allowed || []).map((x) => String(x || "").replace(/\D/g, "")).filter(Boolean).flatMap((d) => [d, d.replace(/^973/, "")]));
+  return String(text).replace(/\+?\d[\d\s-]{6,}\d/g, (m) => { const d = m.replace(/\D/g, ""); return d.length < 8 || ok.has(d) || ok.has(d.replace(/^973/, "")) ? m : "(الرقم)"; });
+}
+async function handleValue(env, deps, value) {
   const f = deps.fetch || fetch, D = db(env, f);
   const shop = await shopId(env, D);
   if (!shop) return;
-  const value = payload && payload.entry && payload.entry[0] && payload.entry[0].changes && payload.entry[0].changes[0] && payload.entry[0].changes[0].value;
   // coexistence: a staff member answered from the WhatsApp Business app on the shop phone →
   // log it in the chat and let the person handle it (the assistant stays quiet for HUMAN_HOURS)
   if (value && Array.isArray(value.message_echoes)) {
@@ -308,6 +318,7 @@ async function handleInbound(env, deps, payload) {
   for (const m of value.messages) {
     const phone = String(m.from || "").replace(/\D/g, "");
     if (!/^\d{8,15}$/.test(phone)) continue;
+    if (m.type === "reaction" || m.type === "system" || m.type === "ephemeral" || m.type === "request_welcome") continue; // 👍 on a message, number change… — nothing to answer
     let text = m.type === "text" ? (m.text && m.text.body) || "" : m.type === "button" ? (m.button && m.button.text) || "" : m.type === "interactive" ? ((m.interactive.button_reply || m.interactive.list_reply || {}).title || "") : m.type === "location" ? `📍 موقعي: https://maps.google.com/?q=${m.location.latitude},${m.location.longitude}${m.location.address ? " — " + m.location.address : ""}` : "";
     const media = !text;
     if (media) text = `[${m.type === "audio" ? "رسالة صوتية" : m.type === "image" ? "صورة" : m.type === "video" ? "فيديو" : m.type === "document" ? "ملف" : "رسالة غير نصية"}]`;
@@ -320,7 +331,7 @@ async function handleInbound(env, deps, payload) {
     const now = new Date().toISOString();
     let thread = ex;
     if (!ex) thread = (await D.post("wa_threads", { shop_id: shop, phone, name: (contact.profile && contact.profile.name) || (cust && cust.name) || null, customer_id: cust ? cust.id : null, last_text: text.slice(0, 200), last_at: now, unread: 1, ...(media ? { flag: "media", waiting: true } : {}) }))[0];
-    else thread = (await D.patch(`wa_threads?shop_id=eq.${shop}&phone=eq.${phone}`, { last_text: text.slice(0, 200), last_at: now, unread: (ex.unread || 0) + 1, ...(cust && !ex.customer_id ? { customer_id: cust.id } : {}), ...(media && ex.mode !== "human" ? { flag: "media", waiting: true } : {}) }))[0];
+    else thread = (await D.patch(`wa_threads?shop_id=eq.${shop}&phone=eq.${phone}`, { last_text: text.slice(0, 200), last_at: now, unread: (ex.unread || 0) + 1, ...(ex.mode === "human" ? { waiting: true } : {}), ...(cust && !ex.customer_id ? { customer_id: cust.id } : {}), ...(media && ex.mode !== "human" ? { flag: "media", waiting: true } : {}) }))[0];
     // read receipt (blue ticks) — best effort
     if (m.id && env.WA_TOKEN && env.WA_PHONE_ID) f(`https://graph.facebook.com/${env.WA_API_VERSION || "v21.0"}/${env.WA_PHONE_ID}/messages`, { method: "POST", headers: { Authorization: `Bearer ${env.WA_TOKEN}`, "Content-Type": "application/json" }, body: JSON.stringify({ messaging_product: "whatsapp", status: "read", message_id: m.id }) }).catch(() => {});
 
@@ -333,7 +344,15 @@ async function handleInbound(env, deps, payload) {
     }
     const ctx = { D, shop, phone, cust, thread, settings, patch: null, note: null, flag: null };
     let reply = "";
-    if (!deps.ai) {
+    if (media) {
+      ctx.patch = { waiting: true, flag: "media" };
+      // one acknowledgement per burst of photos/voice notes (marked with a zero-width space), not one per file
+      const outs = await D.get(`wa_messages?shop_id=eq.${shop}&phone=eq.${phone}&dir=eq.out&order=at.desc&limit=4`).catch(() => []);
+      const recent = (outs || []).some((o) => o.who === "bot" && String(o.body || "").endsWith("\u200b") && Date.now() - new Date(o.at).getTime() < 15 * 60e3);
+      if (!recent) reply = (staffAvailable(cfg)
+        ? "وصلتنا رسالتك 👍 الموظف بيشوفها ويرد عليك هنا قريباً.\nGot it 👍 our team will check it and reply here shortly."
+        : `وصلتنا رسالتك 👍 الموظف بيشوفها ويرد عليك أول ما يتوفر (الدوام ${cfg.from}–${cfg.to}).\nGot it 👍 our team will reply as soon as they're available.`) + "\u200b";
+    } else if (!deps.ai) {
       // no Claude key: never pretend — route to staff
       ctx.patch = { waiting: true, flag: "human" };
       reply = ex ? "" : NO_AI;
@@ -370,6 +389,7 @@ async function handleInbound(env, deps, payload) {
     if (ctx.note) await D.post("wa_messages", { shop_id: shop, phone, dir: "note", who: "system", body: ctx.note.slice(0, 4000) }, "return=minimal");
     if (ctx.patch || ctx.flag) await D.patch(`wa_threads?shop_id=eq.${shop}&phone=eq.${phone}`, { ...(ctx.flag ? { flag: ctx.flag, waiting: true } : {}), ...(ctx.patch || {}), ...(ctx.cust && !thread.customer_id ? { customer_id: ctx.cust.id } : {}) });
     // the customer sent another message while this answer was being written: let that newer turn answer everything at once
+    if (reply) reply = scrubPhones(reply, [profile && profile.phone, profile && profile.whatsapp]);
     if (reply && m.id && deps.ai) {
       const latest = (await D.get(`wa_messages?shop_id=eq.${shop}&phone=eq.${phone}&dir=eq.in&order=at.desc&limit=1`).catch(() => []))[0];
       if (latest && latest.wa_id && latest.wa_id !== m.id) reply = "";
