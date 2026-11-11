@@ -379,3 +379,25 @@ test("order status: a delivered order put on the customer's account is reported 
   assert.match(o9.payment, /آجل/); assert.match(result.account_balance, /0\.500/);
   assert.match(ai.calls[0].system[0].text, /ويانا/);
 });
+
+test("handed to staff but nobody replied: quiet for 2 h, then the assistant answers again (apologising); after a staff reply it stays quiet 12 h", async () => {
+  const handle = await load(), w = world();
+  // handed over 3 hours ago, no staff reply since
+  w.threads.push({ shop_id: SHOP, phone: "97333111111", mode: "human", human_at: new Date(Date.now() - 3 * 3600e3).toISOString(), waiting: true, flag: "human", unread: 0 });
+  let ai = fakeAI([text("هلا! معذرة على التأخير، شلون أقدر أساعدك؟")]);
+  await handle(hook(inbound("97333111111", "Hi")), ENV, { fetch: w.f, ai });
+  assert.equal(ai.calls.length, 1); assert.equal(w.sent.length, 1);
+  assert.match(ai.calls[0].messages[ai.calls[0].messages.length - 1].content[0].text, /ولم يرد بعد/);
+  // handed over 30 minutes ago → still quiet
+  const w2 = world(); w2.threads.push({ shop_id: SHOP, phone: "97333111111", mode: "human", human_at: new Date(Date.now() - 30 * 60e3).toISOString(), waiting: true, flag: "human", unread: 0 });
+  ai = fakeAI([text("x")]);
+  await handle(hook(inbound("97333111111", "Hi")), ENV, { fetch: w2.f, ai });
+  assert.equal(ai.calls.length, 0);
+  // staff replied 5 hours ago (after the hand-off) → quiet (12 h rule)
+  const w3 = world(); const t5 = new Date(Date.now() - 5 * 3600e3).toISOString();
+  w3.threads.push({ shop_id: SHOP, phone: "97333111111", mode: "human", human_at: t5, waiting: false, unread: 0 });
+  w3.msgs.push({ id: 999, shop_id: SHOP, phone: "97333111111", dir: "out", who: "📱 جوال المحل", body: "هلا", at: t5, wa_id: "wamid.s1" });
+  ai = fakeAI([text("x")]);
+  await handle(hook(inbound("97333111111", "شكراً")), ENV, { fetch: w3.f, ai });
+  assert.equal(ai.calls.length, 0);
+});

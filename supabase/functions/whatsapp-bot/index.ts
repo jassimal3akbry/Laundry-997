@@ -24,6 +24,7 @@ const json = (status, body) => new Response(JSON.stringify(body), { status, head
 const r3 = (n) => Math.round((Number(n) || 0) * 1000) / 1000;
 const bd = (n) => `${r3(n).toFixed(3)} د.ب`;
 const HUMAN_HOURS = 12;          // a chat taken by staff goes back to the assistant after 12 h without staff replies
+const HANDOFF_WAIT_HOURS = 2;    // handed to staff but nobody has replied yet: the assistant waits 2 h, then helps again
 const HISTORY = 16;              // messages of context sent to the model
 const SLOTS = { morning: "صباحاً 8–12", noon: "ظهراً 12–4", evening: "مساءً 4–8", night: "ليلاً 8–12" };
 
@@ -133,7 +134,7 @@ const RULES = `أنت المساعد الافتراضي لمغسلة على وا
 7) الشكاوى والملاحظات: اعتذر باختصار، اجمع التفاصيل (رقم الطلب إن وجد)، ثم استخدم submit_feedback، وقل إن الإدارة ستتابع.
 8) لا تؤكد أسعاراً نهائية لطلب لم يُستلم بعد؛ السعر النهائي يُحسب في المحل حسب القطع الفعلية.
 9) رسائل الصوت والصور: قل إنك تستقبل النص فقط، واطلب كتابة الطلب أو عرض التحويل للموظف.
-10) اللغة: إذا اختار العميل «العربية» أو «English» (زر أو كتابة) أو كتب «عربي / Arabic / English / انجليزي»، التزم بهذه اللغة في كل الردود حتى يغيّرها. بالإنجليزية اكتب إنجليزية واضحة وودودة، وأسماء الأصناف بالإنجليزية من بيانات المحل، والعملة BHD.
+10) لا تخلط لغتين في رد واحد (لا تكتب عبارات إنجليزية داخل رد عربي ولا العكس). اللغة: إذا اختار العميل «العربية» أو «English» (زر أو كتابة) أو كتب «عربي / Arabic / English / انجليزي»، التزم بهذه اللغة في كل الردود حتى يغيّرها. بالإنجليزية اكتب إنجليزية واضحة وودودة، وأسماء الأصناف بالإنجليزية من بيانات المحل، والعملة BHD.
 11) القائمة: إذا كانت رسالة العميل تحية فقط أو اختيار لغة أو «قائمة / menu / مساعدة»، رحّب واعرض باختصار ما تقدر تساعد فيه بأسطر مرقمة: 1 الأسعار والخدمات · 2 الباقات · 3 حجز استلام من البيت · 4 توصيل طلب جاهز · 5 حالة طلبي · 6 شكوى أو ملاحظة · 7 التحدث مع موظف. وإذا كتب رقماً من القائمة فنفّذ ما يقابله.
 14) أنت تتكلم باسم المحل بصيغة «نحن»: قل «عندك ثياب ويانا / عندنا / نستلم / بنرد عليك» — لا تقل أبداً «وياهم / عندهم / المحل عندهم» كأنك شخص خارج المحل. «الموظف» شخص من فريقنا.
 15) الدفع: اعتمد على نتيجة get_my_orders كما هي — «مدفوع» أو «آجل على الحساب» أو «غير مدفوع». إذا كان على العميل دين في account_balance اذكره بلطف. لا تقل «مدفوع بالكامل» إلا إذا كانت النتيجة «مدفوع» ولا يوجد دين.
@@ -339,11 +340,19 @@ async function handleValue(env, deps, value) {
     if (m.id && env.WA_TOKEN && env.WA_PHONE_ID) f(`https://graph.facebook.com/${env.WA_API_VERSION || "v21.0"}/${env.WA_PHONE_ID}/messages`, { method: "POST", headers: { Authorization: `Bearer ${env.WA_TOKEN}`, "Content-Type": "application/json" }, body: JSON.stringify({ messaging_product: "whatsapp", status: "read", message_id: m.id }) }).catch(() => {});
 
     if (!cfg.enabled) continue; // assistant switched off in the system: staff answer from the WhatsApp page
+    let resumedAfterHandoff = false;
     if (thread.mode === "human") {
-      const fresh = thread.human_at && Date.now() - new Date(thread.human_at).getTime() < HUMAN_HOURS * 3600e3;
+      // quiet while a person is really handling the chat: 12 h after the last staff reply (system or shop phone);
+      // handed over but no staff reply yet: quiet for 2 h only — the customer is never left without an answer
+      const handAt = thread.human_at ? new Date(thread.human_at).getTime() : 0;
+      const lastStaff = (await D.get(`wa_messages?shop_id=eq.${shop}&phone=eq.${phone}&dir=eq.out&who=neq.bot&order=at.desc&limit=1`).catch(() => []))[0];
+      const staffAt = lastStaff && lastStaff.at ? new Date(lastStaff.at).getTime() : 0;
+      const staffActive = staffAt && staffAt >= handAt - 60e3;
+      const quiet = staffActive ? Date.now() - staffAt < HUMAN_HOURS * 3600e3 : handAt && Date.now() - handAt < HANDOFF_WAIT_HOURS * 3600e3;
       const backToBot = /^(بوت|المساعد|الرد الآلي|bot)$/i.test(text.trim());
-      if (fresh && !backToBot) continue; // a person is handling this chat — the assistant stays quiet
-      await D.patch(`wa_threads?shop_id=eq.${shop}&phone=eq.${phone}`, { mode: "bot" }); // staff silent for 12 h → assistant again
+      if (quiet && !backToBot) continue; // a person is handling this chat — the assistant stays quiet
+      resumedAfterHandoff = !staffActive && !backToBot;
+      await D.patch(`wa_threads?shop_id=eq.${shop}&phone=eq.${phone}`, { mode: "bot" }); // the chat stays flagged for staff (waiting)
     }
     const ctx = { D, shop, phone, cust, thread, settings, patch: null, note: null, flag: null };
     let reply = "";
@@ -373,7 +382,7 @@ async function handleValue(env, deps, value) {
       const n0 = bhNow();
       const who = cust ? `العميل مسجّل: ${cust.name}${cust.area ? " — " + cust.area : ""}${cust.address ? " — " + cust.address : ""}.` : `عميل جديد غير مسجّل${thread && thread.name ? ` (اسمه في واتساب: ${thread.name})` : ""}.`;
       // context for this turn rides inside the customer's last message (works on every model; no system-role message)
-      const ctxText = `[سياق من النظام — ليس من العميل] الآن: ${n0.weekday} ${n0.date} الساعة ${n0.time} (البحرين). ${who} الموظفون ${staffAvailable(cfg) ? "متاحون الآن" : `غير متاحين الآن (الدوام ${cfg.from}–${cfg.to})`}.${media ? " آخر رسالة من العميل ليست نصاً." : ""}`;
+      const ctxText = `[سياق من النظام — ليس من العميل] الآن: ${n0.weekday} ${n0.date} الساعة ${n0.time} (البحرين). ${who} الموظفون ${staffAvailable(cfg) ? "متاحون الآن" : `غير متاحين الآن (الدوام ${cfg.from}–${cfg.to})`}.${media ? " آخر رسالة من العميل ليست نصاً." : ""}${resumedAfterHandoff ? " حُوّلت هذه المحادثة للموظف سابقاً ولم يرد بعد: اعتذر باختصار عن التأخير وساعد العميل بنفسك، وأخبره أن طلبه ما زال عند الموظف للمتابعة — لا تحوّله مرة ثانية إلا إذا طلب." : ""}`;
       const last = msgs[msgs.length - 1];
       if (last && last.role === "user") last.content = [{ type: "text", text: ctxText }, ...(typeof last.content === "string" ? [{ type: "text", text: last.content }] : last.content)];
       else msgs.push({ role: "user", content: ctxText });
