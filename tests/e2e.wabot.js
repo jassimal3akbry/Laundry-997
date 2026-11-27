@@ -4,13 +4,13 @@
 // The whatsapp-bot Edge Function itself is unit-tested in tests/wa-bot.test.js; here its endpoint is simulated.
 // Usage: node tests/e2e.wabot.js [path-to-html]   (needs a local PostgreSQL server, run as root)
 const path = require("path");
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const { launchBrowser } = require("./browser");
 const serve = require("./serve");
 const { startStandin } = require("./supabase-standin");
-const { execFileSync } = require("child_process");
+const { psql } = require("./local-postgres");
 const DB = "l997_wabot_" + process.pid;
 // writes as the database owner — what the whatsapp-bot function does with the service role
-const adm = (sql) => execFileSync("su", ["postgres", "-c", `psql -X -q -v ON_ERROR_STOP=1 -d ${DB}`], { input: sql, stdio: ["pipe", "pipe", "pipe"] }).toString();
+const adm = (sql) => psql(DB, ["-q"], sql).stdout;
 const lit = (s) => "'" + String(s).replace(/'/g, "''") + "'";
 
 const file = path.resolve(process.argv[2] || path.join(__dirname, "..", "laundry-997-full.html"));
@@ -21,7 +21,7 @@ const PW = "Owner#2026pass";
 (async () => {
   const cloud = await startStandin({ latencyMs: 30, database: DB });
   const url = await serve(file);
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   const errors = [], botCalls = [];
   const ctx = await browser.newContext({ timezoneId: "Asia/Bahrain", viewport: { width: 1280, height: 900 } });
   const A = await ctx.newPage();

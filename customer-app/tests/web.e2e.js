@@ -1,7 +1,7 @@
 // Browser test of the customer app's web build (dist/) with the customer-api mocked.
 // Usage: npm run export:web && node tests/web.e2e.js [screenshots-dir]
 const http = require("http"), fs = require("fs"), path = require("path");
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const { launchBrowser } = require("../../tests/browser");
 const DIST = path.join(__dirname, "..", "dist"), SHOTS = process.argv[2] || "";
 let failures = 0;
 const check = (n, c, d) => { console.log(`${c ? "PASS" : "FAIL"}  ${n}${d !== undefined ? "  → " + String(d).slice(0, 200) : ""}`); if (!c) failures++; };
@@ -46,7 +46,7 @@ function reply(body) {
 (async () => {
   await new Promise((r) => server.listen(0, r));
   const base = `http://127.0.0.1:${server.address().port}/app/`;
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: SHOTS ? 2 : 1, locale: "ar-BH", timezoneId: "Asia/Bahrain" });
   const page = await ctx.newPage();
   const errors = []; page.on("pageerror", (e) => errors.push(e.message));
@@ -55,6 +55,10 @@ function reply(body) {
   await page.route(/functions\/v1\/customer-api/, async (route) => {
     if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "*" } });
     const body = JSON.parse(route.request().postData() || "{}");
+    if (body.action === "feedback" && !calls.some((call) => call.action === "feedback")) {
+      calls.push(body);
+      return route.abort("internetdisconnected");
+    }
     await route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(reply(body)) });
   });
   await page.route(/wa\.me|google\.com/, (r) => r.fulfill({ status: 200, body: "ok" }));
@@ -99,6 +103,15 @@ function reply(body) {
   await shot("6-account-en");
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   check("fits a phone screen (no sideways scroll)", over <= 1, over);
+  await page.goto(base + "order/o3");
+  await page.getByLabel("5", { exact: true }).click();
+  await page.getByText("Send", { exact: true }).click();
+  await page.getByText("No internet connection", { exact: true }).waitFor();
+  check("rating failure shows a retryable error instead of losing the rating", !!(await page.getByText("Send", { exact: true }).isEnabled()));
+  await page.getByText("Send", { exact: true }).click();
+  await page.getByText("Thanks for your rating", { exact: false }).waitFor();
+  const ratingCalls = calls.filter((call) => call.action === "feedback");
+  check("retry submits the same rating for the delivered order", ratingCalls.length === 2 && ratingCalls.every((call) => call.orderId === "o3" && call.rating === 5));
   check("no JavaScript errors", errors.length === 0, errors.slice(0, 2).join(" | "));
   await browser.close(); server.close();
   console.log(failures ? `\n${failures} check(s) FAILED` : "\nALL CUSTOMER-APP CHECKS PASSED");

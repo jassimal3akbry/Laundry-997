@@ -2,7 +2,7 @@
 // only logs in, the scroll position stays where it was, and the new-order product search / category stay as typed.
 // Usage: node tests/e2e.nojump.js [path-to-html]   (needs a local PostgreSQL server, run as root)
 const path = require("path");
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const { launchBrowser } = require("./browser");
 const serve = require("./serve");
 const { startStandin } = require("./supabase-standin");
 
@@ -17,7 +17,7 @@ const PW = "Owner#2026pass";
 (async () => {
   const cloud = await startStandin({ latencyMs: 60 });
   const url = await serve(file);
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   const errors = [];
   async function device(tag, height) {
     const page = await (await browser.newContext({ timezoneId: "Asia/Bahrain", viewport: { width: 1280, height: height || 900 } })).newPage();

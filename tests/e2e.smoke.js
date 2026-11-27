@@ -1,7 +1,7 @@
 // End-to-end smoke test: drives the real app in headless Chromium.
 // Usage: node tests/e2e.smoke.js [path-to-html]   (default: laundry-997-full.html)
 const path = require("path");
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const { launchBrowser } = require("./browser");
 const serve = require("./serve");
 
 const file = path.resolve(process.argv[2] || path.join(__dirname, "..", "laundry-997-full.html"));
@@ -13,7 +13,7 @@ function check(name, cond, detail) {
 }
 
 (async () => {
-  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
+  const browser = await launchBrowser();
   const ctx = await browser.newContext({ timezoneId: "Asia/Bahrain", viewport: { width: 1280, height: 900 } });
   const page = await ctx.newPage();
   const errors = [];

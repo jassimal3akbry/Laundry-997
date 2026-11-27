@@ -3,7 +3,7 @@
 // accounts (optional / required), tamper-evident audit log (hash chain) + server refuses audit edits, filters + search.
 // Usage: node tests/e2e.security.js [path-to-html]   (needs a local PostgreSQL server, run as root)
 const path = require("path");
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const { launchBrowser } = require("./browser");
 const serve = require("./serve");
 const { startStandin } = require("./supabase-standin");
 
@@ -18,7 +18,7 @@ const OWNER_PW = "Owner#2026pass", WORKER_PW = "Worker#2026new";
 (async () => {
   const cloud = await startStandin({ latencyMs: 30 });
   const url = await serve(file);
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   const errors = [];
   async function device(tag, ua) {
     const page = await (await browser.newContext({ timezoneId: "Asia/Bahrain", viewport: { width: 1280, height: 900 }, ...(ua ? { userAgent: ua } : {}) })).newPage();

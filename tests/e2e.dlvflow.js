@@ -4,7 +4,7 @@
 // route; driver assignment; "collected" with bag count; missed attempts with reschedule; WhatsApp delivery requests.
 // Usage: node tests/e2e.dlvflow.js [path-to-html]
 const path = require("path");
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const { launchBrowser } = require("./browser");
 const serve = require("./serve");
 
 const file = path.resolve(process.argv[2] || path.join(__dirname, "..", "laundry-997-full.html"));
@@ -12,7 +12,7 @@ let failures = 0;
 function check(name, cond, detail) { console.log(`${cond ? "PASS" : "FAIL"}  ${name}${detail !== undefined ? "  → " + String(detail).replace(/\n/g, " ⏎ ").slice(0, 320) : ""}`); if (!cond) failures++; }
 
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   const page = await (await browser.newContext({ timezoneId: "Asia/Bahrain", viewport: { width: 1280, height: 900 } })).newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));

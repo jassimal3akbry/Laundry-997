@@ -3,14 +3,14 @@
 // uncollected orders), English without Arabic labels, and no sideways scrolling on iPad / iPhone.
 // Usage: node tests/e2e.dashboard.js [path-to-html]
 const path = require("path");
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const { launchBrowser } = require("./browser");
 const serve = require("./serve");
 const file = path.resolve(process.argv[2] || path.join(__dirname, "..", "laundry-997-full.html"));
 let failures = 0;
 function check(name, cond, detail) { console.log(`${cond ? "PASS" : "FAIL"}  ${name}${detail !== undefined ? "  → " + String(detail).slice(0, 300) : ""}`); if (!cond) failures++; }
 (async () => {
   const url = await serve(file);
-  const b = await chromium.launch();
+  const b = await launchBrowser();
   const p = await (await b.newContext({ viewport: { width: 1366, height: 900 }, timezoneId: "Asia/Bahrain" })).newPage();
   const errs = []; p.on("pageerror", (e) => errs.push(e.message));
   await p.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());

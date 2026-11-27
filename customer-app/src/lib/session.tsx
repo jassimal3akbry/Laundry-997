@@ -35,20 +35,47 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
+  const fetchCatalog = useCallback(() => api<Catalog>("catalog", { lang }), [lang]);
+  const saveCatalog = useCallback((data: Catalog) => {
+    setCatalog(data);
+    void setItem("l997c_catalog", JSON.stringify(data));
+  }, []);
   const refreshCatalog = useCallback(async () => {
-    try { const c = await api<Catalog>("catalog", { lang }); setCatalog(c); setItem("l997c_catalog", JSON.stringify(c)); } catch { /* keep the cached copy */ }
-  }, [lang]);
-  useEffect(() => { refreshCatalog(); }, [refreshCatalog]);
+    try { saveCatalog(await fetchCatalog()); } catch { /* keep the cached copy */ }
+  }, [fetchCatalog, saveCatalog]);
+  useEffect(() => {
+    if (!ready) return;
+    let active = true;
+    fetchCatalog().then((data) => { if (active) saveCatalog(data); }, () => {});
+    return () => { active = false; };
+  }, [ready, fetchCatalog, saveCatalog]);
 
   const signOut = useCallback(async () => { await removeItem("l997c_token"); setToken(null); setHome(null); }, []);
+  const fetchHome = useCallback(() => api<Home>("home", {}, token), [token]);
+  const saveHome = useCallback((data: Home) => {
+    setHome(data);
+    setHomeError("");
+  }, []);
+  const handleHomeError = useCallback(async (error: unknown) => {
+    if (error instanceof ApiError && error.status === 401) await signOut();
+    else setHomeError(error instanceof ApiError && error.message === "offline" ? "offline" : "error");
+  }, [signOut]);
   const refreshHome = useCallback(async () => {
     if (!token) return;
     setLoadingHome(true);
-    try { const h = await api<Home>("home", {}, token); setHome(h); setHomeError(""); }
-    catch (e) { if (e instanceof ApiError && e.status === 401) await signOut(); else setHomeError(e instanceof ApiError && e.message === "offline" ? "offline" : "error"); }
+    try { saveHome(await fetchHome()); }
+    catch (error) { await handleHomeError(error); }
     finally { setLoadingHome(false); }
-  }, [token, signOut]);
-  useEffect(() => { if (token) refreshHome(); }, [token, refreshHome]);
+  }, [token, fetchHome, saveHome, handleHomeError]);
+  useEffect(() => {
+    if (!token) return;
+    let active = true;
+    fetchHome().then(
+      (data) => { if (active) saveHome(data); },
+      (error) => { if (active) return handleHomeError(error); },
+    );
+    return () => { active = false; };
+  }, [token, fetchHome, saveHome, handleHomeError]);
 
   const value = useMemo<S>(() => ({
     ready, token, lang, rtl: lang === "ar", t: (k: TKey) => DICT[lang][k] ?? String(k),

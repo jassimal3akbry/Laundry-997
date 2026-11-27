@@ -2,7 +2,7 @@
 // text still visible (excluding customer/user-entered data). Fails if core dialogs show Arabic.
 // Usage: node tests/e2e.english.js [path-to-html]
 const path = require("path");
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const { launchBrowser } = require("./browser");
 const serve = require("./serve");
 
 const file = path.resolve(process.argv[2] || path.join(__dirname, "..", "laundry-997-full.html"));
@@ -14,13 +14,20 @@ function check(name, cond, detail) {
 const AR = /[؀-ۿ]+(?:[\s؀-ۿ«»،؛؟.\-—:()]*[؀-ۿ]+)*/g;
 
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   const ctx = await browser.newContext({ timezoneId: "Asia/Bahrain", viewport: { width: 1280, height: 900 } });
   const page = await ctx.newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
-  await page.addInitScript(() => { window.open = () => ({ closed: false }); window.print = () => {}; if (!localStorage.getItem("l997_lang")) localStorage.setItem("l997_lang", JSON.stringify("en")); });
+  await page.addInitScript(() => {
+    window.open = () => ({ closed: false });
+    window.print = () => {};
+    Object.defineProperty(navigator, "clipboard", {
+      value: { write: async () => { throw new Error("Clipboard unavailable"); } },
+    });
+    if (!localStorage.getItem("l997_lang")) localStorage.setItem("l997_lang", JSON.stringify("en"));
+  });
   await require("./fixed-prices")(page); // flow test: fixed test prices, independent of the shop's price list
   await page.goto(await serve(file));
   await page.fill("#au_name", "Owner"); await page.fill("#au_user", "owner"); await page.fill("#au_pw", "Owner#2026pass"); await page.fill("#au_pw2", "Owner#2026pass");
@@ -65,7 +72,7 @@ const AR = /[؀-ۿ]+(?:[\s؀-ۿ«»،؛؟.\-—:()]*[؀-ۿ]+)*/g;
   const t3 = await dialogText("delivery dialog");
   await page.fill("#qf_count", "2"); await page.click("#quickFormSubmitBtn");
   // delivery now opens the receipt for WhatsApp at once (copy image + chat; here copying is blocked → the receipt preview)
-  await page.waitForSelector("#receiptPreviewDialog[open]", { timeout: 5000 }).catch(() => {});
+  await page.waitForSelector("#receiptPreviewDialog[open]", { timeout: 5000 });
   const t4 = await page.evaluate(() => { const d = document.getElementById("receiptPreviewDialog"); const s = d && d.open ? d.textContent.replace(/\s+/g, " ") : ""; if (d && d.open) d.close(); return s; });
   check("delivery dialog in English", /Deliver order/.test(t3) && /Payment method/.test(t3) && /Collect & deliver/.test(t3) && !AR.test(t3), t3.slice(0, 160));
   AR.lastIndex = 0;

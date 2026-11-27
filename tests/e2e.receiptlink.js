@@ -6,7 +6,8 @@
 // Runs against the local Supabase stand-in (real PostgreSQL + setup.sql).
 // Usage: node tests/e2e.receiptlink.js [path-to-html]   (needs a local PostgreSQL server, run as root)
 const path = require("path");
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const { launchBrowser } = require("./browser");
+const { psql } = require("./local-postgres");
 const serve = require("./serve");
 const { startStandin } = require("./supabase-standin");
 
@@ -21,7 +22,7 @@ const OWNER_PW = "Owner#2026pass", WORKER_PW = "Worker#2026new";
 (async () => {
   const cloud = await startStandin({ latencyMs: 60 });
   const url = await serve(file);
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   const errors = [];
   async function device(tag, ua) {
     const ctx = await browser.newContext({ timezoneId: "Asia/Bahrain", viewport: { width: 1280, height: 900 }, permissions: ["clipboard-read", "clipboard-write"], ...(ua ? { userAgent: ua, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } : {}) });
@@ -160,7 +161,7 @@ const OWNER_PW = "Owner#2026pass", WORKER_PW = "Worker#2026new";
   check("…and disappears from the worker's device", await until(async () => !(await b.ls("l997_customers")).some((c) => c.id === dupC.id), 25000));
 
   /* 6) receipt-link SQL not run on the server → no link button (no broken links); delivery image still works */
-  require("child_process").execFileSync("su", ["postgres", "-c", `psql -X -q -d ${cloud.db} -c "drop function public.public_receipt(text)"`]);
+  psql(cloud.db, ["-q", "-c", "drop function public.public_receipt(text)"]);
   await A.reload(); await A.waitForSelector("body:not(.auth-locked)"); await a.wait(2500); await a.closeAll();
   const o3 = await order(A, a, "", "33445566", 1, true);
   await readyCash(A, a, o3.id, 0.4);
@@ -186,6 +187,12 @@ const OWNER_PW = "Owner#2026pass", WORKER_PW = "Worker#2026new";
   await a.closeAll(); await a.nav("settings"); await A.click('[data-settings-tab="operating"]');
   await A.click("#waApiCheckBtn"); await until(async () => /الربط جاهز/.test(await A.textContent("#waApiStatus")), 8000);
   check("settings → 'check connection' reports the API is ready", /الربط جاهز/.test(await A.textContent("#waApiStatus")), await A.textContent("#waApiStatus"));
+  await A.click("#waApiTestBtn");
+  await A.fill("#qf_phone", "33556677");
+  await A.click("#quickFormSubmitBtn");
+  check("test send uses a synthetic receipt and the entered destination", await until(() =>
+    calls.some(({ body }) => body.orderNo === "TEST" && body.to === "97333556677"
+      && body.name === "إيصال تجريبي" && Buffer.from(body.image, "base64")[0] === 0x89), 8000));
   await A.check("#waApiSetting"); await A.click("#saveSettingsBtn"); await a.wait(300);
   check("automatic sending switched on and saved", (await a.ls("l997_settings")).waApi.enabled === true);
   const o4 = await order(A, a, "", "33445566", 3, true); // 1.200

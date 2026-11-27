@@ -22,6 +22,8 @@
   },
   "devDependencies": {
     "@types/react": "~19.3.0",
+    "eslint": "^9",
+    "eslint-config-expo": "~58.0.4",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -32,7 +34,8 @@
     "typecheck": "tsc --noEmit",
     "export:web": "expo export --platform web --output-dir dist",
     "publish:web": "expo export --platform web --output-dir dist && node scripts/publish-web.js",
-    "test:web": "node tests/web.e2e.js"
+    "test:web": "node tests/web.e2e.js",
+    "lint": "expo lint"
   },
   "private": true
 }

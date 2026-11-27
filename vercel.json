@@ -1,5 +1,10 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": ".",
-  "installCommand": "npm install --no-audit --no-fund"
+  "installCommand": "npm install --no-audit --no-fund",
+  "git": {
+    "deploymentEnabled": {
+      "codex/laundry-qa-20261127": false
+    }
+  }
 }

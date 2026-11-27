@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Linking, Pressable, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSession } from "../../lib/session";
-import { api } from "../../lib/api";
+import { api, ApiError } from "../../lib/api";
 import { Badge, Btn, Card, Divider, Empty, Loading, Row, Screen, Section, T } from "../../components/ui";
 import { Field } from "../../components/AddressForm";
 import { Progress, statusColor } from "../../components/OrderCard";
@@ -16,17 +16,44 @@ export default function OrderScreen() {
   const { t, lang, token, home } = useSession();
   const [o, setO] = useState<Order | null>(null), [err, setErr] = useState(false);
   const [stars, setStars] = useState(0), [note, setNote] = useState(""), [rated, setRated] = useState(false), [busy, setBusy] = useState(false);
-  const load = useCallback(async () => { try { const r = await api<{ order: Order }>("order", { id }, token); setO(r.order); setErr(false); } catch { setErr(true); } }, [id, token]);
-  useEffect(() => { load(); }, [load]);
+  const [ratingError, setRatingError] = useState<"offline" | "error" | null>(null);
+  const load = useCallback(
+    () => api<{ order: Order }>("order", { id }, token),
+    [id, token],
+  );
+  useEffect(() => {
+    let active = true;
+    load().then(
+      ({ order }) => { if (active) { setO(order); setErr(false); } },
+      () => { if (active) setErr(true); },
+    );
+    return () => { active = false; };
+  }, [load]);
+  const refresh = async () => {
+    try { const { order } = await load(); setO(order); setErr(false); }
+    catch { setErr(true); }
+  };
   const back = () => (router.canGoBack() ? router.back() : router.replace("/orders"));
   const header = <Pressable onPress={back} style={{ marginBottom: 10 }}><T w="b" color={C.blue}>{lang === "ar" ? "→" : "←"} {t("back")}</T></Pressable>;
-  if (!o) return <Screen>{header}{err ? <><Empty icon="📡" text={t("error")} /><Btn title={t("retry")} onPress={load} /></> : <Loading />}</Screen>;
+  if (!o) return <Screen>{header}{err ? <><Empty icon="📡" text={t("error")} /><Btn title={t("retry")} onPress={refresh} /></> : <Loading />}</Screen>;
   const [fg, bg] = statusColor(o);
   const nm = (it: { ar: string; en: string }) => (lang === "ar" ? it.ar : it.en);
   const pendingDrop = home?.requests.some((r) => r.kind === "dropreq" && r.orderNumber === o.number);
-  const rate = async () => { setBusy(true); try { await api("feedback", { orderId: o.id, rating: stars, message: note }, token); setRated(true); } finally { setBusy(false); } };
+  const rate = async () => {
+    if (busy || !stars) return;
+    setBusy(true);
+    setRatingError(null);
+    try {
+      await api("feedback", { orderId: o.id, rating: stars, message: note }, token);
+      setRated(true);
+    } catch (error) {
+      setRatingError(error instanceof ApiError && error.message === "offline" ? "offline" : "error");
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
-    <Screen onRefresh={load}>
+    <Screen onRefresh={refresh}>
       {header}
       <Card>
         <Row style={{ justifyContent: "space-between" }}>
@@ -92,6 +119,7 @@ export default function OrderScreen() {
               {[1, 2, 3, 4, 5].map((n) => <Pressable key={n} onPress={() => setStars(n)} accessibilityLabel={`${n}`}><T size={34} center>{n <= stars ? "★" : "☆"}</T></Pressable>)}
             </Row>
             <Field label={t("rateNote")} value={note} onChange={setNote} multiline />
+            {ratingError && <T color={C.red} style={{ marginBottom: 8 }}>{t(ratingError)}</T>}
             <Btn title={t("send")} onPress={rate} disabled={!stars} loading={busy} />
           </>}
         </Card>
