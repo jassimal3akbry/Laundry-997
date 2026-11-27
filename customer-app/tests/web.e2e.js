@@ -66,7 +66,8 @@ function reply(body) {
   const text = () => page.evaluate(() => document.body.innerText);
   const tap = (t) => page.getByText(t, { exact: false }).first().click();
 
-  await page.goto(base); await page.waitForTimeout(1500);
+  await page.goto(base);
+  await page.getByText("الدخول عبر واتساب", { exact: true }).waitFor();
   check("signed-out customers land on the WhatsApp sign-in screen (Arabic first)", /حياك الله في مغسلة 997/.test(await text()) && /الدخول عبر واتساب/.test(await text()));
   await shot("1-login");
   await tap("الدخول عبر واتساب"); await page.waitForTimeout(1200);

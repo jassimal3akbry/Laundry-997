@@ -68,7 +68,9 @@ const UA = {
     await page.waitForTimeout(900); // receipt files prepared in the background while the order is on screen
     return page;
   }
-  const tap = async (page, sel) => { await page.evaluate(() => { window.__clickAt = performance.now(); }); await page.click(sel); await page.waitForTimeout(700); };
+  const tap = async (page, sel) => { await page.locator(sel).evaluate((button) => {
+    button.addEventListener("click", () => { window.__clickAt = performance.now(); }, { capture: true, once: true });
+  }); await page.click(sel); await page.waitForTimeout(700); };
   const shares = (page) => page.evaluate(() => window.__shares);
   const preview = (page) => page.evaluate(() => { const d = document.getElementById("receiptPreviewDialog"); return d && d.open ? { img: !!d.querySelector("#rpImg") && d.querySelector("#rpImg").naturalWidth, dl: !!d.querySelector("#rpDownload"), wa: !!d.querySelector("#rpWa"), text: d.textContent } : null; });
 

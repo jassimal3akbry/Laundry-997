@@ -76,6 +76,7 @@ const OWNER_PW = "Owner#2026pass", WORKER_PW = "Worker#2026new";
   await readyCash(A, a, o1.id, 0.4);
   const before = (await a.wa()).length;
   await deliver(A, a, o1.id, 5);
+  await until(async () => (await a.wa()).length > before, 8000);
   const msgs = await a.wa();
   const m1 = msgs[msgs.length - 1] || "";
   check("confirm delivery → WhatsApp opens straight away (no second 'send?' question)", msgs.length === before + 1 && !(await A.isVisible("#quickFormSubmitBtn")), msgs.length - before);
@@ -136,7 +137,9 @@ const OWNER_PW = "Owner#2026pass", WORKER_PW = "Worker#2026new";
   await B.waitForSelector("body:not(.auth-locked)"); await b.wait(800); await b.closeAll();
   const o2 = await order(B, b, "", "33445566", 2, true); // 0.800
   await readyCash(B, b, o2.id, 0.8);
+  const workerMessages = (await b.wa()).length;
   await deliver(B, b, o2.id, 2);
+  await until(async () => (await b.wa()).length > workerMessages, 8000);
   const mw = (await b.wa()).pop() || "";
   const cw = await b.clip();
   check("worker delivery: WhatsApp opens with thanks, receipt image copied", /تم تسليم طلبك/.test(mw) && cw && cw.w === 760, mw);
