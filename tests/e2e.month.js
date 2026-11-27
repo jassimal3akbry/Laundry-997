@@ -2,7 +2,7 @@
 // monthly report totals by group, daily closure with variance reason, month closure guard.
 // Usage: node tests/e2e.month.js [path-to-html]
 const path = require("path");
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const { launchBrowser } = require("./browser");
 const serve = require("./serve");
 
 const file = path.resolve(process.argv[2] || path.join(__dirname, "..", "laundry-997-full.html"));
@@ -13,7 +13,7 @@ function check(name, cond, detail) {
 }
 
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   const ctx = await browser.newContext({ timezoneId: "Asia/Bahrain", viewport: { width: 1280, height: 900 } });
   const page = await ctx.newPage();
   const errors = [];
@@ -72,6 +72,15 @@ function check(name, cond, detail) {
   // Salary run: net = 300 + 20 + 15 − 50 = 285 ; second run must pay nothing
   await nav("employees");
   await page.click("#payMonthSalariesBtn");
+  const currentMonth = await page.inputValue("#qf_month");
+  const previousMonth = await page.evaluate(() => {
+    const F = window.L997Finance;
+    return F.addDays(F.monthBounds(F.todayStr()).from, -1).slice(0, 7);
+  });
+  await page.fill("#qf_month", previousMonth);
+  await page.locator("#qf_month").dispatchEvent("change");
+  check("payroll preview follows the selected month and its adjustments", (await text("#quickFormSub")).includes(previousMonth) && /320\.000/.test(await text("#quickFormSub")));
+  await page.fill("#qf_month", currentMonth);
   await page.selectOption("#qf_method", "bank_transfer");
   await submit();
   e = await exps();

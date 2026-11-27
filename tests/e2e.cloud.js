@@ -5,7 +5,7 @@
 // resolved in favour of the cloud and logged → password hashes never reach the cloud.
 // Usage: node tests/e2e.cloud.js [path-to-html]   (needs a local PostgreSQL server, run as root)
 const path = require("path");
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const { launchBrowser } = require("./browser");
 const serve = require("./serve");
 const { startStandin } = require("./supabase-standin");
 
@@ -20,7 +20,7 @@ const OWNER_PW = "Owner#2026pass", WORKER_NEW_PW = "Worker#2026new";
 (async () => {
   const cloud = await startStandin({ latencyMs: Number(process.env.CLOUD_LATENCY_MS || 150) }); // a far-away server, like the real one
   const url = await serve(file);
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   const errors = [];
   async function device(tag) {
     const ctx = await browser.newContext({ timezoneId: "Asia/Bahrain", viewport: { width: 1280, height: 900 } });
@@ -223,7 +223,8 @@ const OWNER_PW = "Owner#2026pass", WORKER_NEW_PW = "Worker#2026new";
 
   // edit conflict: both devices change the same customer; the first upload wins, the other is logged
   const custId = (await a.ls("l997_customers"))[0].id;
-  cloud.setOffline(true);
+  await A.context().setOffline(true);
+  await B.context().setOffline(true);
   // edits written straight into each device's storage; re-written until they stick (a screen may save its
   // in-memory copy over a direct write), then confirmed queued for upload before the internet comes back
   const editOn = async (P, val) => {
@@ -236,12 +237,15 @@ const OWNER_PW = "Owner#2026pass", WORKER_NEW_PW = "Worker#2026new";
     return false;
   };
   check("both offline edits saved on their devices", (await editOn(A, "from A")) && (await editOn(B, "from B")));
-  cloud.setOffline(false);
+  await B.context().setOffline(false);
   await B.evaluate(() => window.L997Cloud.syncNow());
   const bWon = await until(async () => (await rows("customers"))[0].data.notes === "from B", 20000);
   check("first upload wins", bWon, bWon ? undefined : JSON.stringify({ cloud: (await rows("customers"))[0].data.notes, bLocal: await B.evaluate((id) => JSON.parse(localStorage.getItem("l997_customers")).find((c) => c.id === id).notes, custId).catch((e) => e.message), bStatus: await b.cloudStatus().catch(() => null), bDebug: await B.evaluate(() => window.L997Cloud._debug()).catch(() => null) }));
+  await A.context().setOffline(false);
   await A.evaluate(() => window.L997Cloud.syncNow());
-  check("second device's edit is not silently lost: logged as a conflict", await until(async () => (await a.cloudStatus()).conflicts >= 1));
+  const rejectedEdit = () => a.cloudStatus().then((status) =>
+    status.conflictList.filter((entry) => entry.collection === "customers" && entry.id === custId && entry.mine.includes('"notes":"from A"')));
+  check("second device's edit is logged once", await until(async () => (await rejectedEdit()).length > 0) && (await rejectedEdit()).length === 1);
   await A.waitForLoadState("load");
   check("device A now shows the cloud's value", await until(async () => (await a.ls("l997_customers")).find((c) => c.id === custId).notes === "from B"));
   check("cloud keeps one consistent value", (await rows("customers"))[0].data.notes === "from B");

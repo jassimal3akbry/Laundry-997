@@ -3,7 +3,7 @@
 // customer's free trips are counted the same on both devices.
 // Usage: node tests/e2e.dlvsync.js [path-to-html]   (needs a local PostgreSQL server, run as root)
 const path = require("path");
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const { launchBrowser } = require("./browser");
 const serve = require("./serve");
 const { startStandin } = require("./supabase-standin");
 
@@ -15,7 +15,7 @@ const PW = "Owner#2026pass";
 (async () => {
   const cloud = await startStandin({ latencyMs: 40 });
   const url = await serve(file);
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   const errors = [];
   async function device(tag, vp) {
     const page = await (await browser.newContext({ timezoneId: "Asia/Bahrain", viewport: vp || { width: 1280, height: 900 } })).newPage();

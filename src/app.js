@@ -4976,8 +4976,8 @@
     if (order.status === "cancelled") lines.push(`✕ ${L("الطلب ملغي", "Order cancelled")}`);
     else if (!order.paymentConfirmed) lines.push(`⏳ ${L("المستحق عند الاستلام", "Due on pickup")}: ${money(p.total)}`);
     else {
-      lines.push(`💳 ${L("طريقة الدفع", "Payment")}: ${orderPayLabel(order)}`, `✅ ${L("المدفوع", "Paid")}: ${money(p.method === "balance" ? p.total : p.paid)}`);
-      const owed = order.debtRecorded && cust ? FIN.allocateDebts([cust], orders, ledger)[order.id] || 0 : 0;
+      const owed = orderOwedNow(order);
+      lines.push(`💳 ${L("طريقة الدفع", "Payment")}: ${orderPayLabel(order)}`, `✅ ${L("المدفوع", "Paid")}: ${money(round3(p.total - owed))}`);
       lines.push(owed > 0 ? `📌 ${L("المتبقي عليكم", "Balance due")}: ${money(owed)}` : `✔ ${L("مدفوع بالكامل", "Fully paid")}`);
     }
     orderPackageLines(order).forEach((l) => lines.push(`🎟 ${l}`));
@@ -5005,7 +5005,7 @@
     if (order.status === "cancelled") status = { text: L("الطلب ملغي", "Order cancelled"), kind: "bad" };
     else if (!order.paymentConfirmed) status = { text: `${L("المستحق عند الاستلام", "Due on pickup")}: ${money(p.total)}`, kind: "warn" };
     else {
-      const owed = order.debtRecorded && cust ? FIN.allocateDebts([cust], orders, ledger)[order.id] || 0 : 0;
+      const owed = orderOwedNow(order);
       if (owed > 0 && owed < p.total - 0.0005) paidRows.push([L("المدفوع", "Paid") + ` (${orderPayLabel(order)})`, money(round3(p.total - owed))]);
       status = owed > 0 ? { text: `${L("المتبقي عليكم", "Balance due")}: ${money(owed)}`, kind: "bad" } : { text: `✓ ${L("مدفوع بالكامل", "Fully paid")} — ${orderPayLabel(order)}`, kind: "good" };
     }
@@ -7252,15 +7252,23 @@
   });
   document.getElementById("waApiTestBtn")?.addEventListener("click", () => {
     if (!cloudOn()) { waStatus("⚠ اربط النظام بالسحابة أولاً."); return; }
-    const o = orders.find((x) => x.status !== "cancelled");
-    if (!o) { waStatus("⚠ لا يوجد طلب لإرسال إيصاله كتجربة — أنشئ طلباً أولاً."); return; }
+    // Use a fixture so testing a destination never sends a customer's actual receipt.
+    const testLabel = lang === "en" ? "Test receipt" : "إيصال تجريبي";
+    const now = new Date().toISOString();
+    const o = {
+      number: "TEST", createdAt: now, deliveredAt: now, status: "delivered",
+      items: [{ clothingId: "shirt", serviceId: "iron", qty: 1, total: 0.2 }],
+      paymentConfirmed: true, payment: { subtotal: 0.2, total: 0.2, paid: 0.2, method: "cash" },
+    };
     openQuickForm({
-      title: "📤 إرسال إيصال تجريبي", sub: `يُرسل إيصال الطلب #${o.number} عبر WhatsApp Business API إلى الرقم الذي تكتبه (رقمك مثلاً).`,
+      title: `📤 ${testLabel}`, sub: lang === "en"
+        ? "Send a sample receipt to the WhatsApp number you enter."
+        : "أرسل إيصالاً ببيانات تجريبية إلى رقم واتساب الذي تدخله.",
       fields: [{ id: "phone", label: "رقم الواتساب (بحريني 8 أرقام أو دولي يبدأ بـ +)", type: "text", value: (loadProfile().whatsapp || "") }],
       submitLabel: "إرسال",
       onSubmit: (v) => {
         if (!validPhone(v.phone)) { toast(PHONE_HINT()); return false; }
-        const cust = customers.find((c) => c.id === o.customerId) || { name: "Test", phone: v.phone, balance: 0 };
+        const cust = { name: testLabel, phone: "" };
         waStatus("… جارٍ الإرسال");
         CLOUD.waSend({ to: cleanPhone(v.phone), name: cust.name, orderNo: String(o.number), line: receiptPayLine(o), image: receiptPngNow(o, cust).b64 })
           .then((r) => waStatus(r && r.ok ? "✓ أُرسل — تحقق من واتساب على الرقم." : `⚠ لم يُرسل: ${waErrHint(r) || (r && r.error) || "خطأ"}${waErrHint(r) ? `  (${(r && r.error) || ""})` : ""}`));
@@ -9123,10 +9131,11 @@
  function purchaseForm(itemId){
   const inv=invs();if(!inv.length){window.toast(IX('e_noitems'));return}
   const it=inv.find(i=>i.id===itemId)||inv[0];
+  const priceOf = (item) => item.lastCost || item.avgCost || '';
   window.openQuickForm({title:IX('t_purchase'),sub:'',submitLabel:undefined,fields:[
    {id:'inventoryId',label:IX('f_material'),type:'select',value:it.id,options:inv.map(i=>({value:i.id,label:`${i.name} (${i.unit})`}))},
    {id:'qty',label:IX('f_qty'),type:'number',step:'0.001',value:'',min:0},
-   {id:'unitCost',label:IX('f_unitcost'),type:'number',step:'0.001',value:it.lastCost||it.avgCost||'',min:0},
+   {id:'unitCost',label:IX('f_unitcost'),type:'number',step:'0.001',value:priceOf(it),min:0},
    {id:'supplierId',label:IX('f_supplier'),type:'select',value:it.supplierId||'',options:supplierOptions().map(o=>({value:o.value,label:o.label}))},
    {id:'invoiceNo',label:IX('f_invoice'),type:'text'},
    {id:'pstatus',label:IX('f_paystatus'),type:'select',value:'paid',options:[{value:'paid',label:IX('f_paidnow')},{value:'credit',label:IX('f_credit')}]},
@@ -9140,6 +9149,12 @@
    if(sp&&!invs().find(i=>i.id===p.inventoryId).supplierId)E().updateMaterial(p.inventoryId,{supplierId:sp.id});
    renderInventory();typeof renderFinance==='function'&&renderFinance();typeof renderClosures==='function'&&renderClosures();window.toast(IX('ok_purchase'));
   }});
+  q('qf_inventoryId').addEventListener('change', (event) => {
+   const material = inv.find((item) => item.id === event.target.value);
+   if (!material) return;
+   q('qf_unitCost').value = priceOf(material);
+   q('qf_supplierId').value = material.supplierId || '';
+  });
  }
  function editPurchaseForm(p){
   const item=invs().find(i=>i.id===p.inventoryId);
@@ -9281,7 +9296,7 @@
   const methods={cash:t('opt_cash'),card:t('opt_card'),benefitpay:'Benefit Pay',bank_transfer:t('opt_bank_transfer')};
   const allMethods=Array.from(new Set([...Object.keys(methods),...Object.keys(d.salesCashBy),...Object.keys(d.expensesBy),...Object.keys(d.depositsBy),...Object.keys(d.refundsBy)]));
   const cell=v=>v?money(v):'--';
-  q('registerDetailsBody').innerHTML=allMethods.map(m2=>`<tr><td>${methods[m2]||esc(m2)}</td><td>${money(d.salesCashBy[m2]||0)}</td><td>${cell(d.depositsBy[m2])}</td><td>${cell(d.expensesBy[m2])}</td><td>${cell(d.refundsBy[m2])}</td></tr>`).join('')+`<tr style="font-weight:800;background:var(--panel-soft)"><td>${t('th_total_row')}</td><td>${money(d.orderPayments+d.packageSales)}</td><td>${money(d.deposits)}</td><td>${money(d.expenses)}</td><td>${money(d.refunds)}</td></tr>`;
+  q('registerDetailsBody').innerHTML=allMethods.map(m2=>`<tr><td>${methods[m2]||esc(m2)}</td><td>${money(d.salesCashBy[m2]||0)}</td><td>${cell(d.depositsBy[m2])}</td><td>${cell(d.expensesBy[m2])}</td><td>${cell(d.refundsBy[m2])}</td></tr>`).join('')+`<tr style="font-weight:800;background:var(--panel-soft)"><td>${t('th_total_row')}</td><td>${money(Object.values(d.salesCashBy).reduce((total, amount) => FIN.r3(total + amount), 0))}</td><td>${money(d.deposits)}</td><td>${money(d.expenses)}</td><td>${money(d.refunds)}</td></tr>`;
   if(window.L997Shift)window.L997Shift.renderPanel(selDate);
   q('dailyClosurePreview').querySelectorAll('[data-cls-day]').forEach(b=>b.addEventListener('click',()=>{q('closureDate').value=b.dataset.clsDay;renderClosures()}));
   q('closureMonth')?.addEventListener('change',e=>{if(/^\d{4}-\d{2}$/.test(e.target.value)){clsMonth=e.target.value;renderClosures()}});
@@ -9538,17 +9553,26 @@
    const es=L997Enterprise.data.employees.filter(e=>e.active!==false);
    if(!es.length){window.toast('أضف موظفاً أولاً');return}
    const E2=L997Enterprise.data;
-   const preview=mk=>es.map(e=>{const d=FIN.salaryDue(e,E2.payroll,E2.expenses,mk);return `${e.name}: ${d.paid?'✓ مصروف مسبقاً':money(d.net)}`}).join(' · ');
+   const validMonth = (month) => /^\d{4}-(0[1-9]|1[0-2])$/.test(month || '');
+   const preview = (month) => {
+     const en = window.getLang997() === 'en';
+     if (!validMonth(month)) return en ? 'Select the payroll month' : 'اختر شهر الرواتب';
+     const due = es.map((employee) => {
+       const salary = FIN.salaryDue(employee, E2.payroll, E2.expenses, month);
+       return `${employee.name}: ${salary.paid ? (en ? '✓ Already paid' : '✓ مصروف مسبقاً') : money(salary.net)}`;
+     });
+     return `${month} · ${due.join(' · ')}`;
+   };
    const mk0=FIN.todayStr().slice(0,7);
    window.openQuickForm({
-     title:'💵 صرف رواتب الشهر', sub:`صافي كل موظف = الراتب + العمولة + المكافآت − الخصومات − السلف. شهر ${mk0}: ${preview(mk0)}`,
+     title:'💵 صرف رواتب الشهر', sub:preview(mk0),
      fields:[
        {id:'month',label:'شهر الرواتب',type:'month',value:mk0},
        {id:'method',label:'طريقة الصرف',type:'select',value:'bank_transfer',options:METHOD_OPTS},
      ],
      submitLabel:'صرف الرواتب',
      onSubmit:v=>{
-       if(!/^\d{4}-\d{2}$/.test(v.month||'')){window.toast('اختر الشهر');return false}
+       if(!validMonth(v.month)){window.toast('اختر الشهر');return false}
        const me=window.L997Auth?window.L997Auth.user():null;
        let n=0,total=0;
        es.forEach(e=>{
@@ -9563,6 +9587,9 @@
        renderEmployees(); typeof renderFinance==='function'&&renderFinance(); typeof renderClosures==='function'&&renderClosures();
        window.toast(`تم صرف رواتب ${n} موظف — الإجمالي ${money(total)}`);
      }
+   });
+   q('qf_month').addEventListener('change', (event) => {
+     q('quickFormSub').textContent = preview(event.target.value);
    });
  });
  // refresh enterprise dashboard cards by appending financial snapshot to existing dashboard

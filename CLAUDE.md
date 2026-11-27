@@ -2,6 +2,10 @@
 
 The owner (Jassim) runs **997 Laundry, Riffa, Bahrain**, and is not a programmer. Talk to him in Arabic (Gulf/Bahraini is fine), short and practical; he may write quickly with typos or mixed Arabic/English. Act as lead engineer: decide, build, test, publish, then tell him plainly what changed and what (if anything) he must do. Never ask him for passwords, API keys or tokens in chat — keys go only into Supabase → Edge Functions → Secrets.
 
+## Owner directive
+
+Follow [AGENTS.md](AGENTS.md), [SPEC.md](SPEC.md) and [OWNER-DECISIONS.md](OWNER-DECISIONS.md). Record verified work in [PROGRESS.md](PROGRESS.md) and [TEST-REPORT.md](TEST-REPORT.md). Use an isolated branch and draft pull request. Production access, merging, deployment, live integrations and paid commitments require specific owner approval.
+
 ## The three parts
 | Part | Folder | Live at | Users |
 |---|---|---|---|
@@ -17,7 +21,7 @@ Edge Functions (the owner pastes the code in Supabase → Edge Functions → *na
 Data model: every business record lives in table `records` (`shop_id`, `collection`, `record_id`, `data` JSON, `version`, `seq`). Collections: `orders`, `customers`, `ledger`, `customer_packages`, `suspended_orders` (held orders + pickup/delivery requests), `settings` (doc `_`: prices, packageDefs, delivery policy, waBot…), `profile`, `custom_garments`, etc. The service role can only **insert/select** `records` from functions (no update) — so functions add requests; staff confirm them in the system.
 
 ## Rules that matter
-- **Publish only after tests pass**: `npm run check` and `npm run check:cloud` (run `service postgresql start` first). Then `git push origin main` and `git push site HEAD:main` (the `site` remote is the GitHub Pages repo), and verify the live site with curl.
+- **When the owner expressly approves publication, publish only after tests pass**: `npm run check` and `npm run check:cloud` (run `service postgresql start` first). Then `git push origin main` and `git push site HEAD:main` (the `site` remote is the GitHub Pages repo), and verify the live site with curl.
 - Customer app: `cd customer-app && npx tsc --noEmit && npm run publish:web && npm run test:web` before committing a change to it. Read `customer-app/AGENTS.md` (Expo SDK 58 — use `npx expo install`, Expo Router in `src/app/`).
 - Never run destructive SQL on production (no `golive_reset.sql`), never commit customer data or backups, never put model names in commit messages or code comments.
 - Money is always BHD with 3 decimals. Arabic RTL first, English second (Urdu in the system).

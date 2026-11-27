@@ -2,7 +2,7 @@
 // and the linked expense follow; a purchase already partly used cannot be voided or reduced below what was used.
 // Usage: node tests/e2e.purchases.js [path-to-html]
 const path = require("path");
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const { launchBrowser } = require("./browser");
 const serve = require("./serve");
 
 const file = path.resolve(process.argv[2] || path.join(__dirname, "..", "laundry-997-full.html"));
@@ -13,12 +13,12 @@ function check(name, cond, detail) {
 }
 
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   const page = await (await browser.newContext({ timezoneId: "Asia/Bahrain", viewport: { width: 1280, height: 900 } })).newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
-  await page.addInitScript(() => { if (!localStorage.getItem("l997_inventory")) localStorage.setItem("l997_inventory", JSON.stringify([{ id: "soap", name: "صابون", unit: "لتر", category: "detergent", qty: 0, minQty: 2, targetQty: 20, avgCost: 0 }])); });
+  await page.addInitScript(() => { if (!localStorage.getItem("l997_inventory")) localStorage.setItem("l997_inventory", JSON.stringify([{ id: "soap", name: "صابون", unit: "لتر", category: "detergent", qty: 0, minQty: 2, targetQty: 20, avgCost: 0 }, { id: "bags", name: "Bags", unit: "pack", qty: 10, avgCost: 2, supplierId: "supplier" }])); if (!localStorage.getItem("l997_suppliers")) localStorage.setItem("l997_suppliers", JSON.stringify([{ id: "supplier", name: "Test Supplier" }])); });
   await page.goto(await serve(file));
   const PW = "Owner#2026pass";
   const wait = (ms) => page.waitForTimeout(ms);
@@ -34,6 +34,15 @@ function check(name, cond, detail) {
   await page.fill("#au_name", "Owner"); await page.fill("#au_user", "owner"); await page.fill("#au_pw", PW); await page.fill("#au_pw2", PW);
   await page.click("#au_form button[type=submit]"); await page.check("#au_saved"); await page.click("#au_next");
   await page.waitForSelector("body:not(.auth-locked)");
+
+  await tab("purchases"); await page.click('[data-act="addp"]');
+  await page.selectOption("#qf_inventoryId", "bags");
+  check("switching material loads its own unit cost and supplier",
+    (await page.inputValue("#qf_unitCost")) === "2" && (await page.inputValue("#qf_supplierId")) === "supplier");
+  await page.selectOption("#qf_inventoryId", "soap");
+  check("switching to an unpriced material clears the previous defaults",
+    (await page.inputValue("#qf_unitCost")) === "" && (await page.inputValue("#qf_supplierId")) === "");
+  await closeAll();
 
   // 1) wrong entry: 10 L soap @ 1.000 (should have been 6) — then 3 L used
   const p1 = await buy(10, 1);

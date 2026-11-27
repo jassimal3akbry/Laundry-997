@@ -4,7 +4,7 @@
 // is lost is not duplicated on retry; a payment on one device never lands in another employee's shift.
 // Usage: node tests/e2e.syncfin.js [path-to-html]   (needs a local PostgreSQL server, run as root)
 const path = require("path");
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const { launchBrowser } = require("./browser");
 const serve = require("./serve");
 const { startStandin } = require("./supabase-standin");
 
@@ -20,7 +20,7 @@ const OWNER_PW = "Owner#2026pass", WORKER_PW = "Worker#2026new";
 (async () => {
   const cloud = await startStandin({ latencyMs: 120 });
   const url = await serve(file);
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   const errors = [];
   async function device(tag) {
     const ctx = await browser.newContext({ timezoneId: "Asia/Bahrain", viewport: { width: 1280, height: 900 } });

@@ -7,7 +7,9 @@ import { C, F } from "../../lib/theme";
 // Home opens first even when the Arabic order puts it last in the list
 export const unstable_settings = { initialRouteName: "index" };
 
-const icon = (e: string) => ({ focused }: { focused: boolean }) => <Text style={{ fontSize: 21, opacity: focused ? 1 : 0.55 }}>{e}</Text>;
+const icon = (e: string) => function TabIcon({ focused }: { focused: boolean }) {
+  return <Text style={{ fontSize: 21, opacity: focused ? 1 : 0.55 }}>{e}</Text>;
+};
 
 export default function TabsLayout() {
   const { t, rtl } = useSession();

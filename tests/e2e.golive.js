@@ -5,8 +5,8 @@
 // Usage: node tests/e2e.golive.js [path-to-html]   (needs a local PostgreSQL server, run as root)
 const path = require("path");
 const fs = require("fs");
-const { execFileSync } = require("child_process");
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const { psql } = require("./local-postgres");
+const { launchBrowser } = require("./browser");
 const serve = require("./serve");
 const { startStandin } = require("./supabase-standin");
 
@@ -18,12 +18,11 @@ function check(name, cond, detail) {
 }
 const OWNER_PW = "Owner#2026pass", WORKER_PW = "Worker#2026new";
 // admin read (like the Supabase SQL editor): one value
-const adminVal = (db, sql) => execFileSync("su", ["postgres", "-c", `psql -X -At -d ${db} -c "${sql.replace(/"/g, '\\"')}"`]).toString().trim();
+const adminVal = (db, sql) => psql(db, ["-At", "-c", sql]).stdout.trim();
 function runSql(db, name) {
-  const dir = "/var/lib/postgresql/l997_golive"; fs.mkdirSync(dir, { recursive: true });
-  const dst = path.join(dir, name); fs.copyFileSync(path.join(__dirname, "..", "supabase", name), dst);
-  execFileSync("chown", ["-R", "postgres", dir]);
-  return execFileSync("su", ["postgres", "-c", `psql -X -v ON_ERROR_STOP=1 -d ${db} -f ${dst} 2>&1`]).toString();
+  const sql = fs.readFileSync(path.join(__dirname, "..", "supabase", name), "utf8");
+  const { stdout, stderr } = psql(db, [], sql);
+  return stdout + stderr;
 }
 
 (async () => {
@@ -31,7 +30,7 @@ function runSql(db, name) {
   // like the real Supabase login table: a computed column (inserting into it directly fails)
   adminVal(cloud.db, "alter table auth.users add column if not exists confirmed_at timestamptz generated always as (updated_at) stored");
   const url = await serve(file);
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   const errors = [];
   async function device(tag) {
     const ctx = await browser.newContext({ timezoneId: "Asia/Bahrain", viewport: { width: 1280, height: 900 } });

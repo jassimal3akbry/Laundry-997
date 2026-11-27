@@ -1,14 +1,14 @@
 // Offline app test: serves the built site over http, installs the offline service, cuts the network and
 // checks the app still opens, logs in and keeps its data. Usage: node tests/e2e.offline.js [site-folder]
 const http = require("http"), fs = require("fs"), path = require("path");
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const { launchBrowser } = require("./browser");
 const root = path.resolve(process.argv[2] || path.join(__dirname, ".."));
 const types = { ".html": "text/html", ".js": "text/javascript", ".png": "image/png", ".webmanifest": "application/manifest+json" };
 const srv = http.createServer((q, r) => { let f = decodeURIComponent(q.url.split("?")[0]); if (f.endsWith("/")) f += "index.html"; const p = path.join(root, f);
   fs.readFile(p, (e, d) => { if (e) { r.writeHead(404); return r.end(); } r.writeHead(200, { "Content-Type": types[path.extname(p)] || "application/octet-stream" }); r.end(d); }); }).listen(8997);
 let fails = 0; const check = (n, c, d) => { console.log(`${c ? "PASS" : "FAIL"}  ${n}${d !== undefined ? "  → " + d : ""}`); if (!c) fails++; };
 (async () => {
-  const b = await chromium.launch(); const ctx = await b.newContext(); const p = await ctx.newPage();
+  const b = await launchBrowser(); const ctx = await b.newContext(); const p = await ctx.newPage();
   const nav = (pg) => p.evaluate((pg) => document.querySelector(`.nav-item[data-page="${pg}"]`).click(), pg);
   const errs = []; p.on("pageerror", (e) => errs.push(e.message));
   await p.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());

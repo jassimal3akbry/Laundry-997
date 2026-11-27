@@ -2,7 +2,8 @@
 // invalid prices, likely-duplicate manual payments, and a phone-sized touch screen.
 // Usage: node tests/e2e.risks.js [path-to-html]   (the clock-warning part needs a local PostgreSQL server, run as root)
 const path = require("path");
-const { chromium, devices } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const { devices } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const { launchBrowser } = require("./browser");
 const serve = require("./serve");
 const { startStandin } = require("./supabase-standin");
 
@@ -19,7 +20,7 @@ const shiftClock = (ms) => `(() => { const RD = Date, off = ${ms};
   FD.UTC = RD.UTC; FD.parse = RD.parse; window.Date = FD; })();`;
 
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   const url = await serve(file);
   const errors = [];
   async function open(opts, init) {

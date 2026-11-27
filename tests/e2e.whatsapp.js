@@ -3,7 +3,7 @@
 // Usage: node tests/e2e.whatsapp.js [path-to-html]
 const path = require("path");
 const fs = require("fs");
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const { launchBrowser } = require("./browser");
 const serve = require("./serve");
 
 const file = path.resolve(process.argv[2] || path.join(__dirname, "..", "laundry-997-full.html"));
@@ -16,7 +16,7 @@ const prices = require("./fixtures/prices-v2.json");
 const CATALOG = Number((/const CATALOG_VERSION = (\d+)/.exec(fs.readFileSync(path.join(__dirname, "..", "src", "app.js"), "utf8")) || [])[1]) || 0;
 
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   const page = await (await browser.newContext({ timezoneId: "Asia/Bahrain", viewport: { width: 1280, height: 900 }, permissions: ["clipboard-read", "clipboard-write"] })).newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));

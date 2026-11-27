@@ -2,7 +2,7 @@
 // clicks every non-destructive button, closes any dialog it opens, and reports JS errors.
 // Usage: node tests/e2e.sweep.js [path-to-html]
 const path = require("path");
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const { launchBrowser } = require("./browser");
 const serve = require("./serve");
 
 const file = path.resolve(process.argv[2] || path.join(__dirname, "..", "laundry-997-full.html"));
@@ -11,7 +11,7 @@ const PAGES = ["dashboard", "new-order", "orders", "customers", "balances", "rep
 const SKIP = /logout|خروج|حذف|delete|del-|void|reset|restore|استعادة|print|طباعة|export|تصدير|wa\b|whatsapp|واتساب|lock|تعطيل|disable|ألغ|cancel-order|cancelOrder|revert/i;
 
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   const errors = [];
   let clicks = 0;
   for (const [vw, vh, tag] of [[1280, 900, "desktop"], [390, 844, "phone"]]) {

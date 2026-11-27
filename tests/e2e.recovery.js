@@ -1,7 +1,7 @@
 // Owner password recovery by email + "has a login" badge for staff who log in on other devices (cloud stand-in).
 // Usage: node tests/e2e.recovery.js [path-to-html]   (needs a local PostgreSQL server, run as root)
 const path = require("path");
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const { launchBrowser } = require("./browser");
 const serve = require("./serve");
 const { startStandin } = require("./supabase-standin");
 
@@ -16,7 +16,7 @@ const OWNER_PW = "Owner#2026pass", NEW_PW = "Fresh#2027pass", NEW_PW2 = "Again#2
 (async () => {
   const cloud = await startStandin({ latencyMs: 40 });
   const url = await serve(file);
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   const errors = [];
   async function device(tag) {
     const page = await (await browser.newContext({ timezoneId: "Asia/Bahrain", viewport: { width: 1280, height: 900 } })).newPage();

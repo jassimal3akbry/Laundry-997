@@ -210,8 +210,17 @@
   }
   function conflict(c, rid, localData, row) {
     if (c.name === "orders") lostOrders.add(String(rid));
-    note("conflicts", { at: new Date().toISOString(), collection: c.name, id: rid, mine: canon(localData).slice(0, 4000) });
-    if (row) { staged.set(c.name + "\u0000" + rid, row); stagedCursor = Math.max(stagedCursor, st.cursor || 0); }
+    const mine = canon(localData).slice(0, 4000);
+    const previous = (st.conflicts || []).find((entry) => entry.collection === c.name && entry.id === rid);
+    if (!previous || previous.mine !== mine) {
+      note("conflicts", { at: new Date().toISOString(), collection: c.name, id: rid, mine });
+    }
+    if (row) {
+      const key = c.name + "\u0000" + rid;
+      const queued = staged.get(key);
+      if (!queued || queued.version < row.version) staged.set(key, row);
+      stagedCursor = Math.max(stagedCursor, row.seq || 0);
+    }
   }
   // قيد دفع/استرداد خاص بطلب (ليس سداداً لاحقاً) — لا يتكرر لنفس الطلب
   const orderEntry = (d) => d && d.orderId && !d.settles && (d.type === "order_charge" || d.type === "order_refund" || d.type === "credit");
@@ -290,7 +299,12 @@
         }
         const rows = await api(`/rest/v1/records?shop_id=eq.${st.shopId}&collection=eq.${c.name}&record_id=eq.${encodeURIComponent(rid)}&version=eq.${v}`, { method: "PATCH", headers: rep, body: { data: d } });
         if (rows && rows.length) b[rid] = [rows[0].version, h];
-        else conflict(c, rid, d, await serverRow(c, rid));
+        else {
+          const row = await serverRow(c, rid);
+          // The earlier PATCH may have committed before the connection dropped.
+          if (row && !row.deleted && hashOf(row.data) === h) b[rid] = [row.version, h];
+          else conflict(c, rid, d, row);
+        }
       } catch (e) {
         if (e.offline || e.noSession) throw e;
         note("rejected", { at: new Date().toISOString(), collection: c.name, id: rid, why: e.message });
@@ -350,9 +364,10 @@
     applying = true;
     try {
       COLLECTIONS.forEach((c) => {
-        const rows = groups.get(c) || [];
-        if (!rows.length && !replaceAll) return;
         const b = base[c.name] || (base[c.name] = {});
+        const rows = (groups.get(c) || []).filter((row) =>
+          replaceAll || !b[row.record_id] || row.version > b[row.record_id][0]);
+        if (!rows.length && !replaceAll) return;
         const cur = replaceAll ? null : read(c.key, null);
         if (c.type === "doc") {
           const row = rows.sort((x, y) => y.version - x.version)[0];

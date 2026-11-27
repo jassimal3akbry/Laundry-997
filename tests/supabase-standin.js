@@ -10,25 +10,42 @@ const http = require("http");
 const path = require("path");
 
 const crypto = require("crypto");
-const { execFileSync } = require("child_process");
+const { readFileSync } = require("node:fs");
+const { pgAdmin, psql, port } = require("./local-postgres");
 const { Pool, types } = require("pg");
 types.setTypeParser(20, Number); // bigint → JSON number, as PostgREST returns it
 
 const IDENT = /^[a-z_][a-z0-9_]*$/;
-const pgAdmin = (args) => execFileSync("su", ["postgres", "-c", args], { stdio: "pipe" }).toString();
 
 async function startStandin(opts = {}) {
   const db = opts.database || "l997_e2e_" + process.pid;
   const root = path.join(__dirname, "..", "supabase");
   // fresh database with the real setup script
-  try { pgAdmin(`dropdb --if-exists ${db}`); } catch (e) { /* first run */ }
-  pgAdmin(`createdb ${db}`);
-  for (const f of [path.join(root, "test", "auth_stub.sql"), path.join(root, "setup.sql")]) {
-    pgAdmin(`psql -X -q -v ON_ERROR_STOP=1 -d ${db} -f ${f} >/dev/null 2>&1`);
+  pgAdmin("createdb", db);
+  try {
+    for (const file of [path.join(root, "test", "auth_stub.sql"), path.join(root, "setup.sql")]) {
+      psql(db, ["-q"], readFileSync(file, "utf8"));
+    }
+    if (opts.owner !== false) {
+      psql(db, ["-q", "-v", `owner_email=${opts.owner || "owner"}@997laundry.app`],
+        "insert into public.shop_setup (id, owner_email) values (1, :'owner_email');");
+    }
+    psql(db, ["-q"], `
+      do $$ begin
+        if not exists (select 1 from pg_roles where rolname = 'l997_standin') then
+          create role l997_standin login password 'standin' in role authenticated, anon;
+        end if;
+      end $$;
+      grant authenticated, anon to l997_standin;
+      alter role l997_standin bypassrls;
+      grant select, insert, update on auth.users to l997_standin;
+      grant usage on schema extensions to l997_standin;
+    `);
+  } catch (error) {
+    pgAdmin("dropdb", db);
+    throw error;
   }
-  if (opts.owner !== false) pgAdmin(`psql -X -q -d ${db} -c "insert into public.shop_setup (id, owner_email) values (1, '${opts.owner || "owner"}@997laundry.app')"`);
-  pgAdmin(`psql -X -q -d ${db} -c "do \\$\\$ begin if not exists (select 1 from pg_roles where rolname='l997_standin') then create role l997_standin login password 'standin' in role authenticated, anon; end if; end \\$\\$; grant authenticated, anon to l997_standin; alter role l997_standin bypassrls; grant select, insert, update on auth.users to l997_standin; grant usage on schema extensions to l997_standin;"`);
-  const pool = new Pool({ host: "127.0.0.1", user: "l997_standin", password: "standin", database: db, max: 8 });
+  const pool = new Pool({ host: "127.0.0.1", port, user: "l997_standin", password: "standin", database: db, max: 8 });
   const outbox = []; const sessions = new Map(); // token -> user id
   const refresh = new Map();  // refresh token -> user id
   let requests = 0, offline = false, loseNextWrite = false;
@@ -234,7 +251,7 @@ async function startStandin(opts = {}) {
     loseNextWriteResponse() { loseNextWrite = true; },
     // test inspection only: runs as the stand-in's own login (bypasses RLS); app requests always switch to "authenticated"
     query: (sql, params) => pool.query(sql, params),
-    async close() { server.close(); await pool.end(); try { pgAdmin(`dropdb --if-exists ${db}`); } catch (e) { /* ignore */ } },
+    async close() { server.close(); await pool.end(); pgAdmin("dropdb", db); },
   };
 }
 module.exports = { startStandin };

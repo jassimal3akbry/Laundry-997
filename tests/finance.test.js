@@ -391,3 +391,35 @@ test("a late payer drops one tier", () => {
   const st = F.customerStats(cs, os, [{ id: "t", customerId: "c1", type: "order_charge", amount: -30, orderId: "1", at: A("2026-10-01") }], [], {}, day);
   assert.equal(st.c1.spent90, 100); assert.equal(st.c1.tier, "silver", "would be gold by spend, but 50 days of debt drop it one tier");
 });
+
+test("Bahrain day, seven-day window, and month reconcile cash, card and transfers", () => {
+  const daily = "2026-10-21";
+  const startOfWeek = F.addDays(daily, -6);
+  const month = F.monthBounds(daily);
+  const data = {
+    orders: [
+      order({ id: "cash", total: 12, vat: 1, paidAt: at(daily, "00:30") }),
+      order({ id: "card", total: 8, paidAt: at(startOfWeek), method: "card" }),
+      order({ id: "transfer", total: 20, paidAt: at(month.from), method: "bank_transfer" }),
+    ],
+    expenses: [
+      { date: at(daily), amount: 2, method: "cash" },
+      { date: at(startOfWeek), amount: 3, method: "card" },
+      { date: at(month.from), amount: 4, method: "bank_transfer" },
+    ],
+    ledger: [
+      { type: "credit", amount: 4, method: "bank_transfer", at: at(daily) },
+      { type: "cash_refund", amount: -1, method: "card", at: at(daily) },
+    ],
+  };
+  const totals = (from, to) => {
+    const { salesTotal, expenses, profit, collected, expectedCash } = F.summarize(data, from, to);
+    return { salesTotal, expenses, profit, collected, expectedCash };
+  };
+  assert.deepEqual(totals(daily, daily), { salesTotal: 12, expenses: 2, profit: 9, collected: 15, expectedCash: 10 });
+  assert.deepEqual(totals(startOfWeek, daily), { salesTotal: 20, expenses: 5, profit: 14, collected: 23, expectedCash: 10 });
+  assert.deepEqual(totals(month.from, month.to), { salesTotal: 40, expenses: 9, profit: 30, collected: 43, expectedCash: 10 });
+  const summary = F.summarize(data, month.from, month.to);
+  assert.deepEqual(summary.collectedBy, { cash: 12, card: 8, bank_transfer: 24 });
+  assert.deepEqual(summary.refundsBy, { card: 1 });
+});
