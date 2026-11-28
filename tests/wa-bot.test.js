@@ -453,3 +453,13 @@ test("customer-app sign-in code: confirmed at once without the AI, even while st
   assert.equal(w.sent.length, 1); assert.match(w.sent[0].text.body, /تم تأكيد دخولك/);
   assert.ok(w.msgs.some((m) => m.dir === "in" && /997-482913/.test(m.body)), "the code message is kept (customer-api reads it)");
 });
+
+test("the system's ready-made messages sent from the shop phone (signed «فريق 997 Laundry 💙») do not silence the assistant", async () => {
+  const handle = await load(), w = world(), ai = fakeAI([text("أبشر، الموظف بيطلع لك الحين 🙏")]);
+  const echo = { entry: [{ changes: [{ field: "smb_message_echoes", value: { message_echoes: [{ from: "15556463423", to: "97333111111", id: "wamid.sys1", type: "text", text: { body: "بشارة حلوة يا Ali 🎉\nطلبك رقم #00007 جاهز\nفريق 997 Laundry 💙" } }] } }] }] };
+  await handle(hook(echo), ENV, { fetch: w.f, ai });
+  assert.notEqual((w.threads[0] || {}).mode, "human");
+  await handle(hook(inbound("97333111111", "انا خارج المحل لستلم الطلب")), ENV, { fetch: w.f, ai });
+  assert.equal(ai.calls.length, 1, "the assistant answers the customer");
+  assert.match(w.sent[w.sent.length - 1].text.body, /الموظف بيطلع/);
+});

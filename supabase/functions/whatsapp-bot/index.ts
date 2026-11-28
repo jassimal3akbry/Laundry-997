@@ -160,6 +160,7 @@ const RULES = `أنت «مساعد مغسلة 997» على واتساب — مو
 13) أرقام الهواتف: لا تكتب أي رقم هاتف في ردك أبداً — لا رقم العميل ولا رقماً كتبه العميل ولا أي رقم آخر (رقم المحل فقط إذا سأل عنه). إذا طلب العميل التحقق من طلب برقم آخر أو باسم شخص آخر: لا تستطيع ذلك لحماية خصوصية العملاء — حوّل للموظف بـ request_human واكتب الرقم في سبب التحويل فقط، وقل للعميل «وصلت المعلومة للموظف وبيتأكد لك» بدون ذكر الرقم.
 16) عبارات الموافقة: ابدأ بـ«أبشر/أبشري» أو «حاضر» أو «تم يالشيخ» أو «من عيوني» أو «على هالخشم» بدل «حسناً/بالتأكيد/يسعدني» — ولا تكرر نفس العبارة في ردين متتاليين. إذا لم تعرف جنس العميل استخدم صيغة محايدة أو المذكر المهذب. الأسلوب لا يلغي القواعد: الدقة أولاً، لا تختلق معلومات، ولا تؤكد مواعيد قبل الموظف.
 18) الدفع: إذا سأل العميل كيف يدفع، اذكر طرق الدفع من بيانات المحل (ومنها BenefitPay إن وُجد رقمه) واطلب منه كتابة رقم الطلب في ملاحظة التحويل. إذا قال العميل إنه دفع أو حوّل أو أرسل صورة إيصال دفع: اشكره، وقل إن الموظف بيتأكد من الدفعة ويسجلها، واستخدم leave_message بنص «العميل يقول إنه دفع» مع المبلغ ورقم الطلب ورقم العملية إن ذكرها. لا تؤكد أبداً أن المبلغ وصل أو أن الطلب صار مدفوعاً.
+19) العميل وصل المحل أو ينتظر برا لاستلام طلبه (مثل: «أنا برا»، «خارج المحل»، «وصلت»، «I'm outside»): رد فوراً بلطف أن الموظف بيطلع له الحين، واستخدم request_human بسبب «العميل ينتظر خارج المحل لاستلام طلبه» مع رقم الطلب إن عرفته — ولا تسأله أسئلة إضافية.
 17) تطبيق العملاء: https://997-laundry.github.io/app/ — فيه متابعة الطلبات ورصيد الباقة وحجز الاستلام، والدخول عبر واتساب بضغطة. اذكره باختصار مرة واحدة في المحادثة عندما يسأل العميل عن حالة طلبه أو باقته أو يحجز، ولا تكرره. (هذا الرابط مسموح رغم قاعدة الأرقام.)
 12) توصيل طلب جاهز إلى البيت: تحقق بـ get_my_orders، ثم اجمع المنطقة والعنوان واليوم والوقت، لخّص واطلب الموافقة، ثم استخدم request_delivery. قل إن الطلب وصل للمحل والموظف يؤكد الموعد — لا تقل إنه تأكد.`;
 
@@ -184,7 +185,8 @@ const TOOLS = [
   { name: "leave_message", description: "Leave a message for staff / ask for a call back (when staff are not available or the customer prefers).", strict: true, input_schema: { type: "object", additionalProperties: false, required: ["message", "callback"], properties: { message: { type: "string" }, callback: { type: "boolean" } } } },
   { name: "submit_feedback", description: "Record a complaint, suggestion or praise for the management.", strict: true, input_schema: { type: "object", additionalProperties: false, required: ["kind", "message", "order_number"], properties: { kind: { type: "string", enum: ["complaint", "suggestion", "praise"] }, message: { type: "string" }, order_number: { type: "string", description: "'' if none" } } } },
 ];
-const LOGIN_CODE = /997[-\s]?\d{6}/; // sign-in code shown by the customer app
+const LOGIN_CODE = /997[-\s]?\d{6}/;
+const SYSTEM_SIGN = /(فريق 997 Laundry|The 997 Laundry team|997 Laundry ٹیم|997 Laundry team) 💙\s*$/; // signature of the system's automatic messages // sign-in code shown by the customer app
 const STATUS_AR = { received: "قيد التنظيف", ready: "جاهز للاستلام", delivered: "تم التسليم", cancelled: "ملغي" };
 const uid = () => (globalThis.crypto && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
 const addDays = (ymd, n) => { const d = new Date(ymd + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
@@ -350,10 +352,13 @@ async function handleValue(env, deps, value) {
       const phone = String(m.to || "").replace(/\D/g, "");
       if (!/^\d{8,15}$/.test(phone)) continue;
       const text = (m.type === "text" ? (m.text && m.text.body) || "" : `[${m.type || "رسالة"}]`).slice(0, 4000);
-      try { await D.post("wa_messages?on_conflict=wa_id", { shop_id: shop, phone, dir: "out", who: "📱 جوال المحل", body: text, wa_id: m.id || null }, "return=minimal"); }
+      // the system's own ready-made messages (order received/ready/receipt/reminders — signed «فريق 997 Laundry 💙») are
+      // sent from the shop phone too, but they are notifications, not a person taking over the chat: the assistant keeps answering
+      const sysMsg = SYSTEM_SIGN.test(text);
+      try { await D.post("wa_messages?on_conflict=wa_id", { shop_id: shop, phone, dir: "out", who: sysMsg ? "bot" : "📱 جوال المحل", body: text, wa_id: m.id || null }, "return=minimal"); }
       catch (e) { if (e.status === 409) continue; throw e; } // already logged (e.g. the assistant's own reply)
       const now = new Date().toISOString();
-      const patch = { last_text: text.slice(0, 200), last_at: now, unread: 0, waiting: false, mode: "human", human_at: now };
+      const patch = sysMsg ? { last_text: text.slice(0, 200), last_at: now } : { last_text: text.slice(0, 200), last_at: now, unread: 0, waiting: false, mode: "human", human_at: now };
       const ex = (await D.get(`wa_threads?shop_id=eq.${shop}&phone=eq.${phone}&limit=1`))[0];
       if (ex) await D.patch(`wa_threads?shop_id=eq.${shop}&phone=eq.${phone}`, patch);
       else await D.post("wa_threads", { shop_id: shop, phone, ...patch }, "return=minimal");
