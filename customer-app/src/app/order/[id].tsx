@@ -6,7 +6,7 @@ import { useSession } from "../../lib/session";
 import { api } from "../../lib/api";
 import { Badge, Btn, Card, Divider, Empty, Loading, Row, Screen, Section, T } from "../../components/ui";
 import { Field } from "../../components/AddressForm";
-import { Progress, statusColor } from "../../components/OrderCard";
+import { BillLines, Progress, statusColor } from "../../components/OrderCard";
 import { C } from "../../lib/theme";
 import { fmtDate, money } from "../../lib/i18n";
 import type { Order } from "../../lib/types";
@@ -71,11 +71,7 @@ export default function OrderScreen() {
       <Card>
         {o.packageValue ? <Row style={{ justifyContent: "space-between" }}><T color={C.muted}>{t("fromPackage")}</T><T w="b" color={C.green}>−{money(o.packageValue, lang)}</T></Row> : null}
         {o.urgentFee ? <Row style={{ justifyContent: "space-between" }}><T color={C.muted}>{t("urgent")}</T><T>{money(o.urgentFee, lang)}</T></Row> : null}
-        {o.discount ? <Row style={{ justifyContent: "space-between" }}><T color={C.muted}>%</T><T>−{money(o.discount, lang)}</T></Row> : null}
-        <Row style={{ justifyContent: "space-between" }}><T w="x">{t("total")}</T><T w="x" size={18}>{money(o.total, lang)}</T></Row>
-        <Divider />
-        {o.owed > 0 ? <Row style={{ justifyContent: "space-between" }}><T w="b" color={C.red}>{t("owed")}</T><T w="x" color={C.red}>{money(o.owed, lang)}</T></Row>
-          : <T w="b" color={o.payLater ? C.orange : C.green}>{o.payLater ? t("payLater") : t("paid")}</T>}
+        <BillLines o={o} />
       </Card>
       {o.receipt ? <Btn kind="ghost" icon="🧾" title={t("openReceipt")} onPress={() => Linking.openURL(o.receipt)} style={{ marginTop: 12 }} /> : null}
 

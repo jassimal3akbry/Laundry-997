@@ -40,6 +40,25 @@ export function Progress({ o }: { o: Order }) {
   );
 }
 
+// الفاتورة: قبل الخصم · الخصم · الإجمالي النهائي · المدفوع · المطلوب دفعه
+export function BillLines({ o }: { o: Order }) {
+  const { t, lang } = useSession();
+  const line = (label: string, value: string, color?: string, bold?: boolean) => (
+    <Row style={{ justifyContent: "space-between", marginTop: 4 }}><T size={13} color={C.muted}>{label}</T><T size={bold ? 15 : 13} w={bold ? "x" : "b"} color={color || C.text}>{value}</T></Row>
+  );
+  const disc = Number(o.discount) || 0;
+  return (
+    <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 8 }}>
+      {disc > 0 ? line(t("beforeDiscount"), money(o.before || o.total + disc, lang)) : null}
+      {disc > 0 ? line(`🏷 ${t("discountVal")}`, `−${money(disc, lang)}`, C.green) : null}
+      {line(disc > 0 ? t("finalTotal") : t("total"), money(o.total, lang), undefined, true)}
+      {o.owed > 0 && (o.paidSoFar || 0) > 0 ? line(t("paidSoFar"), money(o.paidSoFar || 0, lang), C.green) : null}
+      {o.owed > 0 ? line(`💳 ${t("dueNow")}`, money(o.owed, lang), C.red, true)
+        : <Row style={{ justifyContent: "flex-end", marginTop: 4 }}>{o.payLater ? <T size={13} color={C.orange}>{t("payLater")}</T> : <T size={13} color={C.green} w="b">{t("paid")}</T>}</Row>}
+    </View>
+  );
+}
+
 export function OrderCard({ o }: { o: Order }) {
   const { t, lang } = useSession();
   const [fg, bg] = statusColor(o);
@@ -57,11 +76,7 @@ export function OrderCard({ o }: { o: Order }) {
         {dlv ? <T color={C.blue} size={14}>{dlv}</T> : null}
       </Row>
       {o.status !== "delivered" && o.status !== "cancelled" ? <Progress o={o} /> : null}
-      <Row style={{ justifyContent: "space-between", marginTop: 12 }}>
-        <T color={C.muted} size={13}>{t("total")}: <T w="b" size={13} color={C.text}>{money(o.total, lang)}</T></T>
-        {o.owed > 0 ? <T w="b" size={14} color={C.red} style={{ fontFamily: F.b }}>{t("owed")}: {money(o.owed, lang)}</T>
-          : o.payLater ? <T size={13} color={C.orange}>{t("payLater")}</T> : <T size={13} color={C.green} w="b">{t("paid")}</T>}
-      </Row>
+      <BillLines o={o} />
     </Card>
   );
 }

@@ -17,7 +17,7 @@ const server = http.createServer((req, res) => {
 const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bahrain" }).format(new Date());
 const ORDERS = [
   { id: "o1", number: "00055", status: "received", createdAt: new Date().toISOString(), readyAt: "", deliveredAt: "", urgent: false, pieces: 25, total: 0, owed: 0, paid: true, payLater: false, fromPackage: true, delivery: { pickup: true, drop: true, address: "الرفاع — مجمع 921", date: "", slot: "", status: "pending" }, receipt: "" },
-  { id: "o2", number: "00048", status: "ready", createdAt: new Date().toISOString(), readyAt: "", deliveredAt: "", urgent: true, pieces: 6, total: 2.4, owed: 2.4, paid: false, payLater: false, fromPackage: false, delivery: null, receipt: "https://997-laundry.github.io/r.html?t=x" },
+  { id: "o2", number: "00048", status: "ready", createdAt: new Date().toISOString(), readyAt: "", deliveredAt: "", urgent: true, pieces: 6, total: 2.4, discount: 0.6, before: 3, paidSoFar: 0, owed: 2.4, paid: false, payLater: false, fromPackage: false, delivery: null, receipt: "https://997-laundry.github.io/r.html?t=x" },
   { id: "o3", number: "00031", status: "delivered", createdAt: "2026-11-01T10:00:00Z", readyAt: "", deliveredAt: "2026-11-03T10:00:00Z", urgent: false, pieces: 10, total: 5, owed: 0, paid: true, payLater: false, fromPackage: false, delivery: null, receipt: "" },
 ];
 const calls = [];
@@ -69,11 +69,12 @@ function reply(body) {
   check("…it shows the code while waiting for the WhatsApp message", /997-482913/.test(await text()));
   await page.waitForTimeout(6500);
   check("after the code arrives on WhatsApp the customer is signed in (home)", /هلا والله أم/.test(await text()), (await text()).slice(0, 120));
+  check("order card: before discount 3.000, discount −0.600, final total, amount to pay", /قبل الخصم/.test(await text()) && /−0\.600/.test(await text()) && /الإجمالي النهائي/.test(await text()) && /المطلوب دفعه/.test(await text()));
   check("home shows the debt banner, active orders and the package", /عليك مبلغ متبقي/.test(await text()) && /#00055/.test(await text()) && /25/.test(await text()) && /قطعة متبقية/.test(await text()));
   check("💳 loyalty card on home: tier, points, card number", /ذهبي/.test(await text()) && /1,240/.test(await text()) && /997-692392/.test(await text()));
   await shot("2-home");
   await tap("#00048"); await page.waitForTimeout(1200);
-  check("order details: items, package value, remaining, deliver-home button", /غترة/.test(await text()) && /0.600/.test(await text()) && /المتبقي/.test(await text()) && /وصّلوه لي البيت/.test(await text()));
+  check("order details: items, package value, remaining, deliver-home button", /غترة/.test(await text()) && /0.600/.test(await text()) && /المطلوب دفعه/.test(await text()) && /وصّلوه لي البيت/.test(await text()));
   await shot("3-order");
   await tap("وصّلوه لي البيت"); await page.waitForTimeout(1000);
   await tap("تأكيد الحجز"); await page.waitForTimeout(1000);

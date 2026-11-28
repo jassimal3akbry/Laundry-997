@@ -143,11 +143,12 @@ function orderView(o, garments, base, full) {
     payLater: !!o.payLater || p.method === "unpaid", fromPackage: items.some((it) => it.fromPackage),
     delivery: d ? { pickup: !!d.pickup, drop: !!d.drop, address: d.address || "", date: d.date || "", slot: d.slot || "", status: d.drop ? d.dropStatus || "pending" : "" } : null,
     receipt: receiptUrl(o, base),
+    discount: r3(p.discount), before: r3((Number(p.total) || 0) + (Number(p.discount) || 0)), paidSoFar: r3(Math.max(0, r3(p.total) - owed(o))),
   };
   if (full) {
     v.items = items;
     v.extras = (o.extras || []).map((l) => ({ label: l.label || l.name || l.id, total: r3(l.total), free: !!l.free }));
-    v.subtotal = r3(p.subtotal); v.discount = r3(p.discount); v.urgentFee = r3(p.urgentFee);
+    v.subtotal = r3(p.subtotal); v.urgentFee = r3(p.urgentFee);
     v.history = (o.statusHistory || []).map((h) => ({ status: h.status, at: h.at }));
     v.packageValue = r3(items.filter((it) => it.fromPackage).reduce((a, it) => a + it.value, 0));
   }
