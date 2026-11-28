@@ -404,10 +404,10 @@ test("order status: a delivered order put on the customer's account is reported 
   assert.match(ai.calls[0].system[0].text, /ويانا/);
 });
 
-test("handed to staff but nobody replied: quiet for 2 h, then the assistant answers again (apologising); after a staff reply it stays quiet 12 h", async () => {
+test("handed to staff but nobody replied: quiet for 1 h, then the assistant answers again (apologising); after a staff message it stays quiet only while staff are talking (30 min)", async () => {
   const handle = await load(), w = world();
   // handed over 3 hours ago, no staff reply since
-  w.threads.push({ shop_id: SHOP, phone: "97333111111", mode: "human", human_at: new Date(Date.now() - 3 * 3600e3).toISOString(), waiting: true, flag: "human", unread: 0 });
+  w.threads.push({ shop_id: SHOP, phone: "97333111111", mode: "human", human_at: new Date(Date.now() - 2 * 3600e3).toISOString(), waiting: true, flag: "human", unread: 0 });
   let ai = fakeAI([text("هلا! معذرة على التأخير، شلون أقدر أساعدك؟")]);
   await handle(hook(inbound("97333111111", "Hi")), ENV, { fetch: w.f, ai });
   assert.equal(ai.calls.length, 1); assert.equal(w.sent.length, 1);
@@ -417,13 +417,20 @@ test("handed to staff but nobody replied: quiet for 2 h, then the assistant answ
   ai = fakeAI([text("x")]);
   await handle(hook(inbound("97333111111", "Hi")), ENV, { fetch: w2.f, ai });
   assert.equal(ai.calls.length, 0);
-  // staff replied 5 hours ago (after the hand-off) → quiet (12 h rule)
-  const w3 = world(); const t5 = new Date(Date.now() - 5 * 3600e3).toISOString();
-  w3.threads.push({ shop_id: SHOP, phone: "97333111111", mode: "human", human_at: t5, waiting: false, unread: 0 });
-  w3.msgs.push({ id: 999, shop_id: SHOP, phone: "97333111111", dir: "out", who: "📱 جوال المحل", body: "هلا", at: t5, wa_id: "wamid.s1" });
+  // staff wrote 10 minutes ago → they are talking: quiet
+  const w3 = world(); const t10 = new Date(Date.now() - 10 * 60e3).toISOString();
+  w3.threads.push({ shop_id: SHOP, phone: "97333111111", mode: "human", human_at: t10, waiting: false, unread: 0 });
+  w3.msgs.push({ id: 999, shop_id: SHOP, phone: "97333111111", dir: "out", who: "📱 جوال المحل", body: "هلا", at: t10, wa_id: "wamid.s1" });
   ai = fakeAI([text("x")]);
   await handle(hook(inbound("97333111111", "شكراً")), ENV, { fetch: w3.f, ai });
   assert.equal(ai.calls.length, 0);
+  // staff's last message was 4 hours ago → the assistant answers the new question itself
+  const w4 = world(); const t4 = new Date(Date.now() - 4 * 3600e3).toISOString();
+  w4.threads.push({ shop_id: SHOP, phone: "97333111111", mode: "human", human_at: t4, waiting: false, unread: 0 });
+  w4.msgs.push({ id: 998, shop_id: SHOP, phone: "97333111111", dir: "out", who: "📱 جوال المحل", body: "Salam Boss", at: t4, wa_id: "wamid.s2" });
+  ai = fakeAI([text("أبشر، طلبك جاهز للاستلام")]);
+  await handle(hook(inbound("97333111111", "وين صار طلبي")), ENV, { fetch: w4.f, ai });
+  assert.equal(ai.calls.length, 1);
 });
 
 test("the model hands over on its own (no request from the customer): staff are alerted but the assistant keeps replying", async () => {

@@ -23,8 +23,8 @@ const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers
 const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 const r3 = (n) => Math.round((Number(n) || 0) * 1000) / 1000;
 const bd = (n) => `${r3(n).toFixed(3)} د.ب`;
-const HUMAN_HOURS = 12;          // a chat taken by staff goes back to the assistant after 12 h without staff replies
-const HANDOFF_WAIT_HOURS = 2;    // handed to staff but nobody has replied yet: the assistant waits 2 h, then helps again
+const HUMAN_MINUTES = 30;        // a staff member wrote in the chat: the assistant stays quiet only while they are talking (30 min after their last message)
+const HANDOFF_WAIT_HOURS = 1;    // handed to staff but nobody has replied yet: the assistant waits 2 h, then helps again
 const HISTORY = 16;              // messages of context sent to the model
 const SLOTS = { morning: "صباحاً 8–12", noon: "ظهراً 12–4", evening: "مساءً 4–8", night: "ليلاً 8–12" };
 
@@ -75,7 +75,7 @@ function dlvCfg(settings) {
 }
 function botCfg(settings) {
   const b = settings.waBot || {};
-  return { enabled: b.enabled === true, staffOn: b.staffOn !== false, from: b.staffFrom || "08:00", to: b.staffTo || "23:00", hours: b.hoursText || "مفتوح 24 ساعة", areas: b.areas || "", extra: b.extra || "" };
+  return { enabled: b.enabled === true, staffOn: b.staffOn !== false, from: b.staffFrom || "08:00", to: b.staffTo || "23:00", hours: b.hoursText || "مفتوح 24 ساعة", areas: b.areas || "", extra: b.extra || "", humanMinutes: Number(b.humanMinutes) || 0 };
 }
 function bhNow() {
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Bahrain", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", weekday: "long", hour12: false }).formatToParts(new Date()).map((x) => [x.type, x.value]));
@@ -346,7 +346,7 @@ async function handleValue(env, deps, value) {
   const shop = await shopId(env, D);
   if (!shop) return;
   // coexistence: a staff member answered from the WhatsApp Business app on the shop phone →
-  // log it in the chat and let the person handle it (the assistant stays quiet for HUMAN_HOURS)
+  // log it in the chat and let the person handle it (the assistant stays quiet while staff are talking — HUMAN_MINUTES)
   if (value && Array.isArray(value.message_echoes)) {
     for (const m of value.message_echoes) {
       const phone = String(m.to || "").replace(/\D/g, "");
@@ -409,7 +409,7 @@ async function handleValue(env, deps, value) {
       const lastStaff = (await D.get(`wa_messages?shop_id=eq.${shop}&phone=eq.${phone}&dir=eq.out&who=neq.bot&order=at.desc&limit=1`).catch(() => []))[0];
       const staffAt = lastStaff && lastStaff.at ? new Date(lastStaff.at).getTime() : 0;
       const staffActive = staffAt && staffAt >= handAt - 60e3;
-      const quiet = staffActive ? Date.now() - staffAt < HUMAN_HOURS * 3600e3 : handAt && Date.now() - handAt < HANDOFF_WAIT_HOURS * 3600e3;
+      const quiet = staffActive ? Date.now() - staffAt < (Number(cfg.humanMinutes) > 0 ? Number(cfg.humanMinutes) : HUMAN_MINUTES) * 60e3 : handAt && Date.now() - handAt < HANDOFF_WAIT_HOURS * 3600e3;
       const backToBot = /^(بوت|المساعد|الرد الآلي|bot)$/i.test(text.trim());
       if (quiet && !backToBot) continue; // a person is handling this chat — the assistant stays quiet
       resumedAfterHandoff = !staffActive && !backToBot;
